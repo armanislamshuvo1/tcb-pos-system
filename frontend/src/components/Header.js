@@ -15,12 +15,13 @@ import {
   WifiOff, 
   UserCircle, 
   ShieldCheck,
-  KeyRound
+  KeyRound,
+  LogOut
 } from 'lucide-react';
 
 export default function Header() {
   const pathname = usePathname();
-  const { user, role, switchRole } = useAuth();
+  const { user, role, logout } = useAuth();
   const [isOnline, setIsOnline] = useState(true);
   const [isPinModalOpen, setIsPinModalOpen] = useState(false);
 
@@ -101,39 +102,46 @@ export default function Header() {
             {/* User & PIN Code Authentication Controls */}
             <div className="flex items-center space-x-3">
               {/* Cashier Identity Display */}
-              <button
-                type="button"
-                onClick={() => setIsPinModalOpen(true)}
-                className="text-right hidden sm:block hover:opacity-80 transition cursor-pointer"
-                title="Click to Switch Cashier or Enter PIN"
-              >
-                <div className="text-[11px] text-slate-400 font-medium">Logged-in Cashier</div>
+              <div className="text-right hidden sm:block">
+                <div className="text-[11px] text-slate-400 font-medium">Logged In</div>
                 <div className="text-sm font-semibold text-white flex items-center justify-end space-x-1">
-                  <span>{user?.fullName || 'Cashier'}</span>
+                  <span>{user?.fullName || user?.employeeCode || 'User'}</span>
                   {role === 'admin' ? (
                     <ShieldCheck className="w-4 h-4 text-purple-400" />
                   ) : (
                     <UserCircle className="w-4 h-4 text-amber-400" />
                   )}
                 </div>
-              </button>
+              </div>
+
+              {/* Role Indicator Badge */}
+              <div className="px-2.5 py-1 text-xs font-bold rounded-md border border-slate-700 bg-slate-800 text-slate-200">
+                <span className={role === 'admin' ? 'text-purple-400 uppercase' : 'text-amber-400 uppercase'}>
+                  {role || 'User'}
+                </span>
+              </div>
 
               {/* PIN Code Switch Button */}
               <button
                 type="button"
                 onClick={() => setIsPinModalOpen(true)}
-                className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl border border-amber-500/40 bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 text-xs font-bold transition shadow-sm active:scale-95"
+                className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl border border-amber-500/40 bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 text-xs font-bold transition shadow-sm active:scale-95 cursor-pointer"
+                title="Switch User via PIN"
               >
                 <KeyRound className="w-3.5 h-3.5 text-amber-400" />
-                <span>PIN Login</span>
+                <span className="hidden sm:inline">Switch</span>
               </button>
 
-              {/* Role Indicator Badge */}
-              <div className="px-2.5 py-1 text-xs font-bold rounded-md border border-slate-700 bg-slate-800 text-slate-200">
-                <span className={role === 'admin' ? 'text-purple-400 uppercase' : 'text-amber-400 uppercase'}>
-                  {role}
-                </span>
-              </div>
+              {/* Lock Terminal / Logout Button */}
+              <button
+                type="button"
+                onClick={logout}
+                className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl border border-red-500/40 bg-red-500/10 hover:bg-red-500/20 text-red-300 text-xs font-bold transition shadow-sm active:scale-95 cursor-pointer"
+                title="Lock Terminal & Log Out"
+              >
+                <LogOut className="w-3.5 h-3.5 text-red-400" />
+                <span>Lock</span>
+              </button>
             </div>
           </div>
         </div>

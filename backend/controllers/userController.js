@@ -130,24 +130,28 @@ exports.getAllUsers = async (req, res, next) => {
 // @access  Public
 exports.pinLogin = async (req, res, next) => {
   try {
-    const { employeeCode, pinCode } = req.body;
+    const { employeeCode, email, identifier, pinCode } = req.body;
+    const loginId = (identifier || employeeCode || email || '').trim();
 
-    if (!employeeCode || !pinCode) {
+    if (!loginId || !pinCode) {
       return res.status(400).json({
         success: false,
-        message: 'Employee ID and PIN code are required'
+        message: 'Employee ID or Email and PIN code are required'
       });
     }
 
     const user = await User.findOne({
-      employeeCode: employeeCode.trim().toUpperCase(),
+      $or: [
+        { employeeCode: loginId.toUpperCase() },
+        { email: loginId.toLowerCase() }
+      ],
       isActive: true
     });
 
     if (!user) {
       return res.status(404).json({
         success: false,
-        message: 'No active employee found with this ID'
+        message: 'No active employee found with this ID or Email'
       });
     }
 
@@ -166,7 +170,8 @@ exports.pinLogin = async (req, res, next) => {
         id: user._id,
         role: user.role,
         fullName: user.fullName,
-        employeeCode: user.employeeCode
+        employeeCode: user.employeeCode,
+        email: user.email
       },
       jwtSecret,
       { expiresIn: '12h' }

@@ -9,7 +9,7 @@ export const useAxiosPublic = () => {
 };
 
 export const useAxiosSecure = () => {
-  const { token } = useAuth();
+  const { token, lockTerminal } = useAuth();
 
   useEffect(() => {
     const requestIntercept = secureApi.interceptors.request.use(
@@ -22,10 +22,22 @@ export const useAxiosSecure = () => {
       (error) => Promise.reject(error)
     );
 
+    const responseIntercept = secureApi.interceptors.response.use(
+      (response) => response,
+      (error) => {
+        if (error.response?.status === 401) {
+          console.warn('[Session] Received 401 Unauthorized - redirecting to login');
+          lockTerminal?.();
+        }
+        return Promise.reject(error);
+      }
+    );
+
     return () => {
       secureApi.interceptors.request.eject(requestIntercept);
+      secureApi.interceptors.response.eject(responseIntercept);
     };
-  }, [token]);
+  }, [token, lockTerminal]);
 
   return secureApi;
 };

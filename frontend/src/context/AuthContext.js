@@ -1,43 +1,42 @@
 'use client';
 
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { publicApi } from '../utils/apiConfig';
 
 const AuthContext = createContext(null);
 
 export const AuthProvider = ({ children }) => {
-  const [user, setUser] = useState({
-    fullName: 'Sarah Jenkins',
-    employeeCode: 'CSH-001',
-    role: 'cashier',
-    email: 'cashier@pos.local'
-  });
-  const [token, setToken] = useState('dev-cashier-token');
+  const [user, setUser] = useState(null);
+  const [token, setToken] = useState(null);
   const [loading, setLoading] = useState(true);
 
+  // Restore saved session from localStorage on initial mount
   useEffect(() => {
-    const savedToken = localStorage.getItem('pos_auth_token');
-    const savedRole = localStorage.getItem('pos_user_role');
-    const savedName = localStorage.getItem('pos_user_name');
-    const savedCode = localStorage.getItem('pos_user_code');
+    try {
+      const savedToken = localStorage.getItem('pos_auth_token');
+      const savedUserStr = localStorage.getItem('pos_user');
 
-    if (savedToken) {
-      setToken(savedToken);
-      setUser({
-        fullName: savedName || (savedRole === 'admin' ? 'System Administrator' : 'Sarah Jenkins'),
-        employeeCode: savedCode || (savedRole === 'admin' ? 'ADM-001' : 'CSH-001'),
-        role: savedRole || 'cashier',
-        email: `${savedRole || 'cashier'}@pos.local`
-      });
+      if (savedToken && savedUserStr) {
+        const parsedUser = JSON.parse(savedUserStr);
+        setToken(savedToken);
+        setUser(parsedUser);
+      }
+    } catch (e) {
+      console.warn('Failed to restore auth session:', e);
+      localStorage.removeItem('pos_auth_token');
+      localStorage.removeItem('pos_user');
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   }, []);
 
-  const loginWithPin = async (employeeCode, pinCode) => {
+  const loginWithPin = async (identifier, pinCode) => {
     try {
       const res = await publicApi.post('/api/users/pin-login', {
-        employeeCode,
-        pinCode
+        identifier: identifier?.trim(),
+        employeeCode: identifier?.trim(),
+        email: identifier?.trim(),
+        pinCode: pinCode?.trim()
       });
 
       if (res.data?.success) {
@@ -46,9 +45,7 @@ export const AuthProvider = ({ children }) => {
         setUser(newUser);
 
         localStorage.setItem('pos_auth_token', newToken);
-        localStorage.setItem('pos_user_role', newUser.role);
-        localStorage.setItem('pos_user_name', newUser.fullName);
-        localStorage.setItem('pos_user_code', newUser.employeeCode);
+        localStorage.setItem('pos_user', JSON.stringify(newUser));
 
         return { success: true, user: newUser };
       }
@@ -56,42 +53,35 @@ export const AuthProvider = ({ children }) => {
     } catch (err) {
       return { 
         success: false, 
-        message: err.response?.data?.message || 'Invalid Employee ID or PIN code' 
+        message: err.response?.data?.message || 'Invalid Employee ID / Email or PIN code' 
       };
     }
   };
 
-  const lockTerminal = () => {
-    // Switch to unauthenticated or prompt mode
+  const logout = useCallback(() => {
     localStorage.removeItem('pos_auth_token');
+    localStorage.removeItem('pos_user');
     localStorage.removeItem('pos_user_role');
     localStorage.removeItem('pos_user_name');
     localStorage.removeItem('pos_user_code');
     setUser(null);
     setToken(null);
-  };
+  }, []);
 
-  const switchRole = (newRole) => {
-    const newToken = newRole === 'admin' ? 'dev-admin-token' : 'dev-cashier-token';
-    const newName = newRole === 'admin' ? 'System Administrator' : 'Sarah Jenkins';
-    const newCode = newRole === 'admin' ? 'ADM-001' : 'CSH-001';
-
-    setToken(newToken);
-    setUser({
-      fullName: newName,
-      employeeCode: newCode,
-      role: newRole,
-      email: `${newRole}@pos.local`
-    });
-
-    localStorage.setItem('pos_auth_token', newToken);
-    localStorage.setItem('pos_user_role', newRole);
-    localStorage.setItem('pos_user_name', newName);
-    localStorage.setItem('pos_user_code', newCode);
-  };
+  const lockTerminal = useCallback(() => {
+    logout();
+  }, [logout]);
 
   return (
-    <AuthContext.Provider value={{ user, token, role: user?.role, loginWithPin, lockTerminal, switchRole, loading }}>
+    <AuthContext.Provider value={{ 
+      user, 
+      token, 
+      role: user?.role, 
+      loginWithPin, 
+      logout,
+      lockTerminal, 
+      loading 
+    }}>
       {children}
     </AuthContext.Provider>
   );

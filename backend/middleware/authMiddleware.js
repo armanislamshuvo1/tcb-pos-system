@@ -27,81 +27,40 @@ exports.authenticateToken = async (req, res, next) => {
           role: localUser.role,
           mongoId: localUser._id,
           fullName: localUser.fullName,
-          employeeCode: localUser.employeeCode
+          employeeCode: localUser.employeeCode,
+          email: localUser.email
         };
         return next();
       }
     } catch (jwtErr) {
-      // If not a signed JWT, proceed to check fallback tokens or Firebase
-    }
-
-    if (token.startsWith('pin_token_')) {
-      const parts = token.split('_');
-      const mongoId = parts[3];
-      const localUser = await User.findById(mongoId);
-      if (!localUser || !localUser.isActive) {
-        return res.status(403).json({ success: false, message: 'User account is inactive or not found' });
+      if (jwtErr.name === 'TokenExpiredError') {
+        return res.status(401).json({ success: false, message: 'Session expired. Please enter your PIN to log in again.' });
       }
-      req.user = {
-        uid: localUser.firebaseUid || String(localUser._id),
-        role: localUser.role,
-        mongoId: localUser._id,
-        fullName: localUser.fullName,
-        employeeCode: localUser.employeeCode
-      };
-      return next();
     }
 
-    let decodedUid = null;
-    let decodedRole = null;
-
+    // 2. Fallback: If Firebase is initialized, verify Firebase token
     if (isInitialized) {
-      const decodedToken = await admin.auth().verifyIdToken(token);
-      decodedUid = decodedToken.uid;
-      decodedRole = decodedToken.role;
-    } else {
-      // Development Mock Mode: allow test tokens formatted as "dev-cashier", "dev-admin", or arbitrary UID
-      if (token === 'dev-admin-token') {
-        decodedUid = 'dev_admin_uid';
-        decodedRole = 'admin';
-      } else if (token === 'dev-cashier-token') {
-        decodedUid = 'dev_cashier_uid';
-        decodedRole = 'cashier';
-      } else {
-        decodedUid = token;
+      try {
+        const decodedToken = await admin.auth().verifyIdToken(token);
+        const decodedUid = decodedToken.uid;
+        const localUser = await User.findOne({ firebaseUid: decodedUid, isActive: true });
+        if (localUser) {
+          req.user = {
+            uid: decodedUid,
+            role: localUser.role,
+            mongoId: localUser._id,
+            fullName: localUser.fullName,
+            employeeCode: localUser.employeeCode,
+            email: localUser.email
+          };
+          return next();
+        }
+      } catch (fbErr) {
+        // Fall through to 401
       }
     }
 
-    // Resolve user from MongoDB
-    let localUser = await User.findOne({ 
-      $or: [{ firebaseUid: decodedUid }, { email: `${decodedUid}@pos.local` }] 
-    });
-
-    // Auto-seed development mock user if operating in local dev mode
-    if (!localUser && !isInitialized) {
-      localUser = await User.create({
-        firebaseUid: decodedUid,
-        email: `${decodedUid}@pos.local`,
-        fullName: decodedRole === 'admin' ? 'System Administrator' : 'Terminal Cashier',
-        employeeCode: decodedRole === 'admin' ? 'ADM-001' : 'CSH-001',
-        role: decodedRole || 'cashier',
-        isActive: true
-      });
-    }
-
-    if (!localUser || !localUser.isActive) {
-      return res.status(403).json({ success: false, message: 'User account is inactive or not found' });
-    }
-
-    req.user = {
-      uid: decodedUid,
-      role: localUser.role,
-      mongoId: localUser._id,
-      fullName: localUser.fullName,
-      employeeCode: localUser.employeeCode
-    };
-
-    next();
+    return res.status(401).json({ success: false, message: 'Invalid or expired authentication token' });
   } catch (error) {
     return res.status(401).json({ success: false, message: 'Invalid or expired token', error: error.message });
   }

@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { useAxiosPublic } from '../hooks/useApi';
+import { useAxiosSecure } from '../hooks/useApi';
 import { 
   KeyRound, 
   Lock, 
@@ -15,10 +15,10 @@ import {
 } from 'lucide-react';
 
 export default function PinLoginModal({ isOpen, onClose }) {
-  const { loginWithPin } = useAuth();
-  const axiosPublic = useAxiosPublic();
+  const { user, loginWithPin } = useAuth();
+  const axiosSecure = useAxiosSecure();
 
-  const [employeeCode, setEmployeeCode] = useState('CSH-001');
+  const [employeeCode, setEmployeeCode] = useState(user?.employeeCode || '');
   const [pinCode, setPinCode] = useState('');
   const [activeUsers, setActiveUsers] = useState([]);
   const [errorMsg, setErrorMsg] = useState('');
@@ -28,11 +28,12 @@ export default function PinLoginModal({ isOpen, onClose }) {
   // Load staff list for quick selection chips
   useEffect(() => {
     if (isOpen) {
+      setEmployeeCode(user?.employeeCode || '');
       setPinCode('');
       setErrorMsg('');
       setSuccess(false);
 
-      axiosPublic.get('/api/staff')
+      axiosSecure.get('/api/staff')
         .then((res) => {
           if (res.data?.success) {
             setActiveUsers(res.data.data);
@@ -40,7 +41,7 @@ export default function PinLoginModal({ isOpen, onClose }) {
         })
         .catch(() => {});
     }
-  }, [isOpen, axiosPublic]);
+  }, [isOpen, axiosSecure, user]);
 
   // Physical keyboard numpad listener
   useEffect(() => {
@@ -182,14 +183,14 @@ export default function PinLoginModal({ isOpen, onClose }) {
 
         {/* PIN Dots Display */}
         <div className="text-center space-y-2">
-          <div className="text-[11px] font-semibold text-slate-400">Enter 4-Digit PIN</div>
-          <div className="flex items-center justify-center space-x-3 py-2">
-            {[0, 1, 2, 3].map((idx) => {
+          <div className="text-[11px] font-semibold text-slate-400">Enter 4 to 6-Digit PIN</div>
+          <div className="flex items-center justify-center space-x-2.5 py-2">
+            {[0, 1, 2, 3, 4, 5].map((idx) => {
               const hasDigit = pinCode.length > idx;
               return (
                 <div
                   key={idx}
-                  className={`w-4 h-4 rounded-full transition-all duration-150 ${
+                  className={`w-3.5 h-3.5 rounded-full transition-all duration-150 ${
                     hasDigit
                       ? 'bg-amber-400 scale-110 shadow-lg shadow-amber-400/40'
                       : 'bg-slate-800 border border-slate-700'

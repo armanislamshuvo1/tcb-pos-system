@@ -158,42 +158,16 @@ const seedData = async () => {
     ]);
     console.log(`[Seed] Created ${discounts.length} preset discounts.`);
 
-    // 4. Create Users (Cashiers, Staff, Admin)
-    const users = await User.create([
-      {
-        firebaseUid: 'dev_admin_uid',
-        email: 'admin@pos.local',
-        fullName: 'System Administrator',
-        employeeCode: 'ADM-001',
-        role: 'admin',
-        isActive: true
-      },
-      {
-        firebaseUid: 'dev_cashier_uid',
-        email: 'cashier@pos.local',
-        fullName: 'Sarah Jenkins',
-        employeeCode: 'CSH-001',
-        role: 'cashier',
-        isActive: true
-      },
-      {
-        firebaseUid: 'dev_staff_john',
-        email: 'john.kitchen@pos.local',
-        fullName: 'John Doe (Kitchen)',
-        employeeCode: 'STF-101',
-        role: 'staff',
-        isActive: true
-      },
-      {
-        firebaseUid: 'dev_staff_alex',
-        email: 'alex.barista@pos.local',
-        fullName: 'Alex Rivers (Barista)',
-        employeeCode: 'STF-102',
-        role: 'staff',
-        isActive: true
-      }
-    ]);
-    console.log(`[Seed] Created ${users.length} users/staff.`);
+    // 4. Create Default Admin User (no hardcoded fake users)
+    const adminUser = await User.create({
+      email: 'arman@tcbpos.com',
+      fullName: 'Arman',
+      employeeCode: 'ADM-001',
+      role: 'admin',
+      pinCode: '276266',
+      isActive: true
+    });
+    console.log(`[Seed] Created Default Admin User: ${adminUser.email} (${adminUser.employeeCode})`);
 
     console.log('[Seed] Database seeding completed successfully!');
     process.exit(0);
