@@ -1,0 +1,31 @@
+const express = require('express');
+const router = express.Router();
+const rateLimit = require('express-rate-limit');
+const userController = require('../controllers/userController');
+const { authenticateToken, requireRole } = require('../middleware/authMiddleware');
+
+// Brute-force protection: Max 5 PIN login attempts per minute per IP
+const pinLoginLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 minute
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    success: false,
+    message: 'Too many PIN login attempts from this terminal. Please wait 1 minute before trying again.'
+  }
+});
+
+// Public PIN login route with rate limiting
+router.post('/pin-login', pinLoginLimiter, userController.pinLogin);
+
+// Authenticated user routes
+router.get('/me', authenticateToken, userController.getCurrentUser);
+router.get('/staff', authenticateToken, userController.getActiveStaff);
+
+// Admin-only user provisioning & listing
+router.get('/admin/users', authenticateToken, requireRole('admin'), userController.getAllUsers);
+router.post('/admin/create', authenticateToken, requireRole('admin'), userController.createUser);
+
+module.exports = router;
+
