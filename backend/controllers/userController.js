@@ -1,14 +1,20 @@
 const User = require('../models/User');
+const Company = require('../models/Company');
 const { admin, isInitialized } = require('../config/firebaseAdmin');
 const jwt = require('jsonwebtoken');
 
 // @desc    Get all active staff members for cart assignment dropdown
 // @route   GET /api/staff
-// @access  Authenticated (Cashier, Admin)
+// @access  Authenticated (Cashier, Admin, System Admin)
 exports.getActiveStaff = async (req, res, next) => {
   try {
-    const staff = await User.find({ isActive: true })
-      .select('fullName employeeCode role email')
+    const query = { isActive: true };
+    if (req.user.companyId && req.user.role !== 'system_admin') {
+      query.$or = [{ companyId: req.user.companyId }, { companyId: null }];
+    }
+
+    const staff = await User.find(query)
+      .select('fullName employeeCode role email companyId')
       .sort({ fullName: 1 })
       .lean();
 
@@ -21,15 +27,34 @@ exports.getActiveStaff = async (req, res, next) => {
   }
 };
 
-// @desc    Get current user profile
+// @desc    Get current user profile & company settings
 // @route   GET /api/users/me
 // @access  Authenticated
 exports.getCurrentUser = async (req, res, next) => {
   try {
-    const user = await User.findById(req.user.mongoId).select('-__v');
+    const user = await User.findById(req.user.mongoId).select('-__v').lean();
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    let company = null;
+    if (user.companyId) {
+      company = await Company.findById(user.companyId).lean();
+    }
+    if (!company) {
+      company = await Company.findOne({ isActive: true }).lean();
+    }
+
     res.status(200).json({
       success: true,
-      data: user
+      data: {
+        ...user,
+        company: company || {
+          name: 'PoS System',
+          branding: { displayName: 'PoS System', logoText: 'P', themeColor: '#F59E0B' },
+          currency: { code: 'MYR', symbol: 'RM' }
+        }
+      }
     });
   } catch (error) {
     next(error);
@@ -38,10 +63,10 @@ exports.getCurrentUser = async (req, res, next) => {
 
 // @desc    Create new user (Cashier or Staff or Admin)
 // @route   POST /api/admin/users/create
-// @access  Admin Only
+// @access  Admin, System Admin
 exports.createUser = async (req, res, next) => {
   try {
-    const { email, password, fullName, employeeCode, role, pinCode } = req.body;
+    const { email, password, fullName, employeeCode, role, pinCode, companyId } = req.body;
 
     if (!email || !fullName || !employeeCode) {
       return res.status(400).json({
@@ -51,6 +76,13 @@ exports.createUser = async (req, res, next) => {
     }
 
     const assignedRole = role || 'cashier';
+    if (assignedRole === 'system_admin' && req.user.role !== 'system_admin') {
+      return res.status(403).json({
+        success: false,
+        message: 'Only system admins can provision other system admins'
+      });
+    }
+
     const assignedPin = (pinCode && pinCode.trim()) ? pinCode.trim() : '1234';
     let firebaseUid = `local_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
 
@@ -74,6 +106,8 @@ exports.createUser = async (req, res, next) => {
       }
     }
 
+    const assignedCompanyId = companyId || req.user.companyId || null;
+
     // Create MongoDB User record
     const user = await User.create({
       firebaseUid,
@@ -82,6 +116,7 @@ exports.createUser = async (req, res, next) => {
       employeeCode: employeeCode.trim().toUpperCase(),
       role: assignedRole,
       pinCode: assignedPin,
+      companyId: assignedCompanyId,
       isActive: true
     });
 
@@ -92,7 +127,8 @@ exports.createUser = async (req, res, next) => {
         email: user.email,
         fullName: user.fullName,
         employeeCode: user.employeeCode,
-        role: user.role
+        role: user.role,
+        companyId: user.companyId
       }
     });
   } catch (error) {
@@ -106,13 +142,82 @@ exports.createUser = async (req, res, next) => {
   }
 };
 
-// @desc    Get all users (Cashiers, Admins, Staff) for Admin Management
+// @desc    Update user profile & credentials
+// @route   PUT /api/admin/users/:id
+// @access  Admin, System Admin
+exports.updateUser = async (req, res, next) => {
+  try {
+    const { email, fullName, employeeCode, role, pinCode, isActive, companyId } = req.body;
+    const user = await User.findById(req.params.id);
+
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    // Security check: Only system_admin can assign or modify system_admin
+    if (role === 'system_admin' && req.user.role !== 'system_admin') {
+      return res.status(403).json({
+        success: false,
+        message: 'Only system admins can assign the system_admin role'
+      });
+    }
+    if (user.role === 'system_admin' && req.user.role !== 'system_admin') {
+      return res.status(403).json({
+        success: false,
+        message: 'Only system admins can modify system admin accounts'
+      });
+    }
+
+    if (email) user.email = email.trim().toLowerCase();
+    if (fullName) user.fullName = fullName.trim();
+    if (employeeCode) user.employeeCode = employeeCode.trim().toUpperCase();
+    if (role) user.role = role;
+    if (isActive !== undefined) user.isActive = Boolean(isActive);
+    if (companyId !== undefined) user.companyId = companyId || null;
+
+    if (pinCode && pinCode.trim()) {
+      user.pinCode = pinCode.trim(); // Pre-save hook will hash
+    }
+
+    await user.save();
+
+    res.status(200).json({
+      success: true,
+      data: {
+        _id: user._id,
+        email: user.email,
+        fullName: user.fullName,
+        employeeCode: user.employeeCode,
+        role: user.role,
+        isActive: user.isActive,
+        companyId: user.companyId
+      }
+    });
+  } catch (error) {
+    if (error.code === 11000) {
+      return res.status(400).json({
+        success: false,
+        message: 'A user with this email or employee code already exists'
+      });
+    }
+    next(error);
+  }
+};
+
+// @desc    Get all users (Cashiers, Admins, Staff, System Admins) for Admin Management
 // @route   GET /api/admin/users
-// @access  Admin Only
+// @access  Admin, System Admin
 exports.getAllUsers = async (req, res, next) => {
   try {
-    const users = await User.find()
+    const query = {};
+    // Tenant admins only see users belonging to their company or unassigned
+    if (req.user.companyId && req.user.role !== 'system_admin') {
+      query.$or = [{ companyId: req.user.companyId }, { companyId: null }];
+    }
+
+    const users = await User.find(query)
       .select('-__v')
+      .populate('companyId', 'name code')
       .sort({ role: 1, fullName: 1 })
       .lean();
 
@@ -163,6 +268,15 @@ exports.pinLogin = async (req, res, next) => {
       });
     }
 
+    // Resolve company branding and currency
+    let company = null;
+    if (user.companyId) {
+      company = await Company.findById(user.companyId).lean();
+    }
+    if (!company) {
+      company = await Company.findOne({ isActive: true }).lean();
+    }
+
     // Cryptographically signed JWT token with 12-hour shift expiry
     const jwtSecret = process.env.JWT_SECRET || 'tcb_pos_secure_jwt_secret_key_shift_token_2026_983742';
     const token = jwt.sign(
@@ -171,7 +285,8 @@ exports.pinLogin = async (req, res, next) => {
         role: user.role,
         fullName: user.fullName,
         employeeCode: user.employeeCode,
-        email: user.email
+        email: user.email,
+        companyId: user.companyId
       },
       jwtSecret,
       { expiresIn: '12h' }
@@ -186,7 +301,13 @@ exports.pinLogin = async (req, res, next) => {
           fullName: user.fullName,
           employeeCode: user.employeeCode,
           role: user.role,
-          email: user.email
+          email: user.email,
+          companyId: user.companyId,
+          company: company || {
+            name: 'PoS System',
+            branding: { displayName: 'PoS System', logoText: 'P', themeColor: '#F59E0B' },
+            currency: { code: 'MYR', symbol: 'RM' }
+          }
         }
       }
     });
@@ -194,5 +315,3 @@ exports.pinLogin = async (req, res, next) => {
     next(error);
   }
 };
-
-

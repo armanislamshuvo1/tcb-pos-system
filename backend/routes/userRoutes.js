@@ -23,9 +23,10 @@ router.post('/pin-login', pinLoginLimiter, userController.pinLogin);
 router.get('/me', authenticateToken, userController.getCurrentUser);
 router.get('/staff', authenticateToken, userController.getActiveStaff);
 
-// Admin-only user provisioning & listing
+// Admin-only user provisioning, editing & listing
 router.get('/admin/users', authenticateToken, requireRole('admin'), userController.getAllUsers);
 router.post('/admin/create', authenticateToken, requireRole('admin'), userController.createUser);
+router.put('/admin/users/:id', authenticateToken, requireRole('admin'), userController.updateUser);
 
 module.exports = router;
 
