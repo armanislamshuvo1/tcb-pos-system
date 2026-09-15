@@ -25,8 +25,8 @@ export const useAxiosSecure = () => {
     const responseIntercept = secureApi.interceptors.response.use(
       (response) => response,
       (error) => {
-        if (error.response?.status === 401) {
-          console.warn('[Session] Received 401 Unauthorized - redirecting to login');
+        if (error.response?.status === 401 || error.response?.status === 403) {
+          console.warn(`[Session] Received ${error.response?.status} (${error.response?.data?.message || 'Unauthorized'}) - locking terminal for re-authentication`);
           lockTerminal?.();
         }
         return Promise.reject(error);
