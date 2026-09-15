@@ -60,6 +60,8 @@ export default function AdminCatalogPage() {
   const [prodPriceDollars, setProdPriceDollars] = useState('');
   const [prodCostDollars, setProdCostDollars] = useState('');
   const [prodStock, setProdStock] = useState('100');
+  const [prodDiscountType, setProdDiscountType] = useState('none'); // 'none', 'percentage', 'fixed_cents'
+  const [prodDiscountValue, setProdDiscountValue] = useState('');
 
   // Product Edit Modal State
   const [editingProduct, setEditingProduct] = useState(null);
@@ -69,6 +71,8 @@ export default function AdminCatalogPage() {
   const [editPriceDollars, setEditPriceDollars] = useState('');
   const [editCostDollars, setEditCostDollars] = useState('');
   const [editStock, setEditStock] = useState('');
+  const [editDiscountType, setEditDiscountType] = useState('none');
+  const [editDiscountValue, setEditDiscountValue] = useState('');
 
   // Category Edit Modal State
   const [editingCategory, setEditingCategory] = useState(null);
@@ -308,6 +312,13 @@ export default function AdminCatalogPage() {
       return;
     }
 
+    let discountVal = 0;
+    if (prodDiscountType === 'fixed_cents') {
+      discountVal = Math.round(parseFloat(prodDiscountValue || '0') * 100);
+    } else if (prodDiscountType === 'percentage') {
+      discountVal = parseFloat(prodDiscountValue || '0');
+    }
+
     try {
       const res = await axiosSecure.post('/api/products/admin', {
         sku: prodSku.trim().toUpperCase(),
@@ -315,7 +326,9 @@ export default function AdminCatalogPage() {
         categoryId: prodCategoryId,
         priceInCents: priceCents,
         costInCents: costCents,
-        stockQuantity: Number(prodStock)
+        stockQuantity: Number(prodStock),
+        discountType: prodDiscountType,
+        discountValue: discountVal
       });
 
       if (res.data?.success) {
@@ -324,6 +337,8 @@ export default function AdminCatalogPage() {
         setProdName('');
         setProdPriceDollars('');
         setProdCostDollars('');
+        setProdDiscountType('none');
+        setProdDiscountValue('');
         fetchCatalogData();
       }
     } catch (err) {
@@ -339,12 +354,25 @@ export default function AdminCatalogPage() {
     setEditPriceDollars((product.priceInCents / 100).toFixed(2));
     setEditCostDollars((product.costInCents / 100).toFixed(2));
     setEditStock(String(product.stockQuantity || 0));
+    setEditDiscountType(product.discountType || 'none');
+    setEditDiscountValue(
+      product.discountType === 'fixed_cents'
+        ? (product.discountValue ? (product.discountValue / 100).toFixed(2) : '')
+        : (product.discountValue ? String(product.discountValue) : '')
+    );
   };
 
   const handleUpdateProduct = async (e) => {
     e.preventDefault();
     const priceCents = Math.round(parseFloat(editPriceDollars) * 100);
     const costCents = Math.round(parseFloat(editCostDollars || '0') * 100);
+
+    let discountVal = 0;
+    if (editDiscountType === 'fixed_cents') {
+      discountVal = Math.round(parseFloat(editDiscountValue || '0') * 100);
+    } else if (editDiscountType === 'percentage') {
+      discountVal = parseFloat(editDiscountValue || '0');
+    }
 
     try {
       const res = await axiosSecure.put(`/api/products/admin/${editingProduct._id}`, {
@@ -353,7 +381,9 @@ export default function AdminCatalogPage() {
         categoryId: editCategoryId,
         priceInCents: priceCents,
         costInCents: costCents,
-        stockQuantity: Number(editStock)
+        stockQuantity: Number(editStock),
+        discountType: editDiscountType,
+        discountValue: discountVal
       });
 
       if (res.data?.success) {
@@ -874,6 +904,87 @@ export default function AdminCatalogPage() {
                     />
                   </div>
 
+                  {/* Product Discount Controls */}
+                  <div className="p-3 bg-slate-850/90 border border-slate-750 rounded-xl space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <label className="block text-xs font-semibold text-amber-300 flex items-center space-x-1.5">
+                        <Tag className="w-3.5 h-3.5" />
+                        <span>Product Discount (Optional)</span>
+                      </label>
+                      {prodDiscountType !== 'none' && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setProdDiscountType('none');
+                            setProdDiscountValue('');
+                          }}
+                          className="text-[11px] text-slate-400 hover:text-red-400 cursor-pointer"
+                        >
+                          Clear
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-[11px] text-slate-400 mb-1">Discount Type</label>
+                        <select
+                          value={prodDiscountType}
+                          onChange={(e) => setProdDiscountType(e.target.value)}
+                          className="w-full px-2.5 py-1.5 bg-slate-800 border border-slate-700 rounded-lg text-xs text-white focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                        >
+                          <option value="none">No Discount</option>
+                          <option value="percentage">Percentage (%)</option>
+                          <option value="fixed_cents">Fixed ({currency?.symbol || 'RM'})</option>
+                        </select>
+                      </div>
+
+                      {prodDiscountType !== 'none' && (
+                        <div>
+                          <label className="block text-[11px] text-slate-400 mb-1">
+                            {prodDiscountType === 'percentage' ? 'Percentage (% Off)' : `Amount Off (${currency?.symbol || 'RM'})`}
+                          </label>
+                          <input
+                            type="number"
+                            step={prodDiscountType === 'percentage' ? '1' : '0.01'}
+                            min="0"
+                            max={prodDiscountType === 'percentage' ? '100' : undefined}
+                            value={prodDiscountValue}
+                            onChange={(e) => setProdDiscountValue(e.target.value)}
+                            placeholder={prodDiscountType === 'percentage' ? '10' : '1.00'}
+                            className="w-full px-2.5 py-1.5 bg-slate-800 border border-slate-700 rounded-lg text-xs text-white focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                          />
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Live Calculated Price Preview */}
+                    {prodDiscountType !== 'none' && parseFloat(prodDiscountValue) > 0 && parseFloat(prodPriceDollars) > 0 && (() => {
+                      const orig = parseFloat(prodPriceDollars);
+                      const val = parseFloat(prodDiscountValue);
+                      let disc = 0;
+                      if (prodDiscountType === 'percentage') {
+                        disc = (orig * val) / 100;
+                      } else {
+                        disc = val;
+                      }
+                      const finalPrice = Math.max(0, orig - disc);
+                      return (
+                        <div className="text-[11px] bg-emerald-950/60 border border-emerald-800/80 rounded-lg px-2.5 py-1.5 text-emerald-300 flex items-center justify-between">
+                          <span>Discounted Price:</span>
+                          <div className="space-x-1.5 font-bold">
+                            <span className="text-slate-400 line-through text-[10px]">
+                              {currency?.symbol || 'RM'} {orig.toFixed(2)}
+                            </span>
+                            <span className="text-emerald-400 font-mono">
+                              {currency?.symbol || 'RM'} {finalPrice.toFixed(2)}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })()}
+                  </div>
+
                   <button
                     type="submit"
                     className="w-full py-2.5 bg-amber-500 hover:bg-amber-400 text-black font-bold text-sm rounded-xl transition shadow-md mt-2"
@@ -905,20 +1016,50 @@ export default function AdminCatalogPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800">
-                  {products.map((p) => (
-                    <tr key={p._id} className="hover:bg-slate-850/60 transition">
-                      <td className="py-3 px-3">
-                        <div className="font-bold text-white">{p.name}</div>
-                        <div className="font-mono text-xs text-slate-400">{p.sku}</div>
-                      </td>
-                      <td className="py-3 px-3">
-                        <span className="text-xs px-2.5 py-0.5 rounded-full bg-slate-800 text-amber-400 border border-slate-700 font-semibold">
-                          {p.categoryNameSnapshot || p.categoryId?.name}
-                        </span>
-                      </td>
-                      <td className="py-3 px-3 font-mono font-bold text-amber-400">
-                        {formatCurrency(p.priceInCents, currency)}
-                      </td>
+                  {products.map((p) => {
+                    const hasDiscount = p.discountType && p.discountType !== 'none' && p.discountValue > 0;
+                    let discCents = 0;
+                    if (hasDiscount) {
+                      if (p.discountType === 'percentage') {
+                        discCents = Math.round((p.priceInCents * p.discountValue) / 100);
+                      } else if (p.discountType === 'fixed_cents') {
+                        discCents = Math.min(p.priceInCents, Math.round(p.discountValue));
+                      }
+                    }
+                    const effectivePriceInCents = Math.max(0, p.priceInCents - discCents);
+
+                    return (
+                      <tr key={p._id} className="hover:bg-slate-850/60 transition">
+                        <td className="py-3 px-3">
+                          <div className="font-bold text-white">{p.name}</div>
+                          <div className="font-mono text-xs text-slate-400">{p.sku}</div>
+                        </td>
+                        <td className="py-3 px-3">
+                          <span className="text-xs px-2.5 py-0.5 rounded-full bg-slate-800 text-amber-400 border border-slate-700 font-semibold">
+                            {p.categoryNameSnapshot || p.categoryId?.name}
+                          </span>
+                        </td>
+                        <td className="py-3 px-3">
+                          {hasDiscount ? (
+                            <div>
+                              <div className="font-mono font-bold text-amber-400">
+                                {formatCurrency(effectivePriceInCents, currency)}
+                              </div>
+                              <div className="flex items-center space-x-1.5 mt-0.5">
+                                <span className="text-[11px] font-mono text-slate-400 line-through">
+                                  {formatCurrency(p.priceInCents, currency)}
+                                </span>
+                                <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                                  {p.discountType === 'percentage' ? `-${p.discountValue}%` : `-${formatCurrency(p.discountValue, currency)}`}
+                                </span>
+                              </div>
+                            </div>
+                          ) : (
+                            <span className="font-mono font-bold text-amber-400">
+                              {formatCurrency(p.priceInCents, currency)}
+                            </span>
+                          )}
+                        </td>
                       <td className="py-3 px-3 font-mono text-slate-400">
                         {formatCurrency(p.costInCents, currency)}
                       </td>
@@ -946,8 +1087,9 @@ export default function AdminCatalogPage() {
                         </div>
                       </td>
                     </tr>
-                  ))}
-                </tbody>
+                  );
+                })}
+              </tbody>
               </table>
             </div>
           </div>
@@ -2074,6 +2216,87 @@ export default function AdminCatalogPage() {
                     onChange={(e) => setEditStock(e.target.value)}
                     className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-white"
                   />
+                </div>
+
+                {/* Product Discount Controls */}
+                <div className="p-3 bg-slate-850/90 border border-slate-750 rounded-xl space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <label className="block text-xs font-semibold text-amber-300 flex items-center space-x-1.5">
+                      <Tag className="w-3.5 h-3.5" />
+                      <span>Product Discount (Optional)</span>
+                    </label>
+                    {editDiscountType !== 'none' && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditDiscountType('none');
+                          setEditDiscountValue('');
+                        }}
+                        className="text-[11px] text-slate-400 hover:text-red-400 cursor-pointer"
+                      >
+                        Clear
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-[11px] text-slate-400 mb-1">Discount Type</label>
+                      <select
+                        value={editDiscountType}
+                        onChange={(e) => setEditDiscountType(e.target.value)}
+                        className="w-full px-2.5 py-1.5 bg-slate-800 border border-slate-700 rounded-lg text-xs text-white focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                      >
+                        <option value="none">No Discount</option>
+                        <option value="percentage">Percentage (%)</option>
+                        <option value="fixed_cents">Fixed ({currency?.symbol || 'RM'})</option>
+                      </select>
+                    </div>
+
+                    {editDiscountType !== 'none' && (
+                      <div>
+                        <label className="block text-[11px] text-slate-400 mb-1">
+                          {editDiscountType === 'percentage' ? 'Percentage (% Off)' : `Amount Off (${currency?.symbol || 'RM'})`}
+                        </label>
+                        <input
+                          type="number"
+                          step={editDiscountType === 'percentage' ? '1' : '0.01'}
+                          min="0"
+                          max={editDiscountType === 'percentage' ? '100' : undefined}
+                          value={editDiscountValue}
+                          onChange={(e) => setEditDiscountValue(e.target.value)}
+                          placeholder={editDiscountType === 'percentage' ? '10' : '1.00'}
+                          className="w-full px-2.5 py-1.5 bg-slate-800 border border-slate-700 rounded-lg text-xs text-white focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                        />
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Live Calculated Price Preview */}
+                  {editDiscountType !== 'none' && parseFloat(editDiscountValue) > 0 && parseFloat(editPriceDollars) > 0 && (() => {
+                    const orig = parseFloat(editPriceDollars);
+                    const val = parseFloat(editDiscountValue);
+                    let disc = 0;
+                    if (editDiscountType === 'percentage') {
+                      disc = (orig * val) / 100;
+                    } else {
+                      disc = val;
+                    }
+                    const finalPrice = Math.max(0, orig - disc);
+                    return (
+                      <div className="text-[11px] bg-emerald-950/60 border border-emerald-800/80 rounded-lg px-2.5 py-1.5 text-emerald-300 flex items-center justify-between">
+                        <span>Discounted Price:</span>
+                        <div className="space-x-1.5 font-bold">
+                          <span className="text-slate-400 line-through text-[10px]">
+                            {currency?.symbol || 'RM'} {orig.toFixed(2)}
+                          </span>
+                          <span className="text-emerald-400 font-mono">
+                            {currency?.symbol || 'RM'} {finalPrice.toFixed(2)}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </div>
 
                 <div className="flex items-center justify-end space-x-2 pt-2 border-t border-slate-800">
