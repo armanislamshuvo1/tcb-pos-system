@@ -3,6 +3,8 @@
 import React, { useState, useEffect } from 'react';
 import Header from '../../components/Header';
 import { useAxiosSecure } from '../../hooks/useApi';
+import { useAuth } from '../../context/AuthContext';
+import { formatCurrency } from '../../utils/currency';
 import { 
   BarChart3, 
   TrendingUp, 
@@ -16,6 +18,7 @@ import {
 
 export default function ReportsPage() {
   const axiosSecure = useAxiosSecure();
+  const { currency } = useAuth();
 
   const [salesSummary, setSalesSummary] = useState(null);
   const [paymentBreakdown, setPaymentBreakdown] = useState([]);
@@ -112,7 +115,7 @@ export default function ReportsPage() {
                 <DollarSign className="w-4 h-4 text-emerald-400" />
               </div>
               <div className="text-2xl font-black text-emerald-400 font-mono">
-                ${(salesSummary.netPaidRevenueInCents / 100).toFixed(2)}
+                {formatCurrency(salesSummary.netPaidRevenueInCents, currency)}
               </div>
               <span className="text-[11px] text-slate-500 mt-1 block">
                 From {salesSummary.paidTransactions} paid checkouts
@@ -125,7 +128,7 @@ export default function ReportsPage() {
                 <Users className="w-4 h-4 text-blue-400" />
               </div>
               <div className="text-2xl font-black text-blue-400 font-mono">
-                ${(salesSummary.outstandingTabLiabilityInCents / 100).toFixed(2)}
+                {formatCurrency(salesSummary.outstandingTabLiabilityInCents, currency)}
               </div>
               <span className="text-[11px] text-slate-500 mt-1 block">
                 Across {salesSummary.unpaidTransactions} open staff tabs
@@ -138,7 +141,7 @@ export default function ReportsPage() {
                 <Tag className="w-4 h-4 text-amber-400" />
               </div>
               <div className="text-2xl font-black text-amber-400 font-mono">
-                ${(salesSummary.totalDiscountInCents / 100).toFixed(2)}
+                {formatCurrency(salesSummary.totalDiscountInCents, currency)}
               </div>
               <span className="text-[11px] text-slate-500 mt-1 block">Line items & preset buttons</span>
             </div>
@@ -149,7 +152,7 @@ export default function ReportsPage() {
                 <TrendingUp className="w-4 h-4 text-purple-400" />
               </div>
               <div className="text-2xl font-black text-purple-400 font-mono">
-                ${(salesSummary.grossSubtotalInCents / 100).toFixed(2)}
+                {formatCurrency(salesSummary.grossSubtotalInCents, currency)}
               </div>
               <span className="text-[11px] text-slate-500 mt-1 block">
                 {salesSummary.totalTransactions} total transactions
@@ -176,13 +179,13 @@ export default function ReportsPage() {
                     <div>
                       <div className="font-bold text-white text-sm">{s.staffName}</div>
                       <div className="text-xs text-slate-400">
-                        {s.totalTransactions} orders • Paid: ${(s.totalPaidInCents / 100).toFixed(2)}
+                        {s.totalTransactions} orders • Paid: {formatCurrency(s.totalPaidInCents, currency)}
                       </div>
                     </div>
                     <div className="text-right">
                       <div className="text-xs text-slate-400">Unpaid Balance</div>
                       <div className={`font-mono font-bold text-sm ${s.totalUnpaidInCents > 0 ? 'text-amber-400' : 'text-emerald-400'}`}>
-                        ${(s.totalUnpaidInCents / 100).toFixed(2)}
+                        {formatCurrency(s.totalUnpaidInCents, currency)}
                       </div>
                     </div>
                   </div>
@@ -212,7 +215,7 @@ export default function ReportsPage() {
                     </div>
                     <div className="text-right">
                       <div className="font-mono font-bold text-white text-sm">
-                        ${(p.totalNetInCents / 100).toFixed(2)}
+                        {formatCurrency(p.totalNetInCents, currency)}
                       </div>
                       <div className="text-xs text-emerald-400 font-semibold">
                         {p.totalQuantitySold} units sold

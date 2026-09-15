@@ -3,6 +3,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import Header from '../../components/Header';
 import { useAxiosSecure } from '../../hooks/useApi';
+import { useAuth } from '../../context/AuthContext';
+import { formatCurrency } from '../../utils/currency';
 import { 
   Receipt, 
   Search, 
@@ -17,6 +19,7 @@ import {
 
 export default function LedgerPage() {
   const axiosSecure = useAxiosSecure();
+  const { currency } = useAuth();
 
   const [transactions, setTransactions] = useState([]);
   const [summary, setSummary] = useState({
@@ -126,7 +129,7 @@ export default function LedgerPage() {
               <DollarSign className="w-4 h-4 text-emerald-400" />
             </div>
             <div className="text-2xl font-black text-emerald-400 font-mono">
-              ${(summary.totalRevenueInCents / 100).toFixed(2)}
+              {formatCurrency(summary.totalRevenueInCents, currency)}
             </div>
           </div>
 
@@ -136,7 +139,7 @@ export default function LedgerPage() {
               <Clock className="w-4 h-4 text-blue-400" />
             </div>
             <div className="text-2xl font-black text-blue-400 font-mono">
-              ${(summary.totalUnpaidInCents / 100).toFixed(2)}
+              {formatCurrency(summary.totalUnpaidInCents, currency)}
             </div>
           </div>
 
@@ -146,7 +149,7 @@ export default function LedgerPage() {
               <TrendingDown className="w-4 h-4 text-amber-400" />
             </div>
             <div className="text-2xl font-black text-amber-400 font-mono">
-              ${(summary.totalDiscountInCents / 100).toFixed(2)}
+              {formatCurrency(summary.totalDiscountInCents, currency)}
             </div>
           </div>
         </div>
@@ -258,7 +261,7 @@ export default function LedgerPage() {
                         {txn.items?.length || 0} items
                       </td>
                       <td className="py-3.5 px-4 font-mono font-bold text-white text-right">
-                        ${(txn.grandTotalInCents / 100).toFixed(2)}
+                        {formatCurrency(txn.grandTotalInCents, currency)}
                       </td>
                     </tr>
                   );

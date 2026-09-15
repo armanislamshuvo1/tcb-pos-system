@@ -2,8 +2,12 @@
 
 import React from 'react';
 import { Plus, Package } from 'lucide-react';
+import { useAuth } from '../../context/AuthContext';
+import { formatCurrency } from '../../utils/currency';
 
 export default function ProductGrid({ products, onAddToCart }) {
+  const { currency } = useAuth();
+
   if (!products || products.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center h-64 bg-slate-800/40 rounded-2xl border border-slate-700/60 p-6 text-center">
@@ -15,7 +19,7 @@ export default function ProductGrid({ products, onAddToCart }) {
   }
 
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+    <div className="grid grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-2.5 sm:gap-3">
       {products.map((product) => {
         const priceFormatted = (product.priceInCents / 100).toFixed(2);
         const categoryColor = product.categoryId?.colorCode || '#3B82F6';
@@ -48,7 +52,7 @@ export default function ProductGrid({ products, onAddToCart }) {
             {/* Bottom Row: Price and Quick Add */}
             <div className="flex items-center justify-between mt-3 pt-2 border-t border-slate-700/50 w-full">
               <span className="text-amber-400 font-extrabold text-base tracking-tight">
-                ${priceFormatted}
+                {formatCurrency(product.priceInCents, currency)}
               </span>
               <div className="w-7 h-7 rounded-lg bg-amber-500/20 group-hover:bg-amber-500 text-amber-400 group-hover:text-black flex items-center justify-center transition-colors">
                 <Plus className="w-4 h-4" />

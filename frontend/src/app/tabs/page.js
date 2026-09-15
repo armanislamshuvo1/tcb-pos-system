@@ -3,6 +3,8 @@
 import React, { useState, useEffect } from 'react';
 import Header from '../../components/Header';
 import { useAxiosSecure } from '../../hooks/useApi';
+import { useAuth } from '../../context/AuthContext';
+import { formatCurrency } from '../../utils/currency';
 import { 
   Users, 
   ChevronDown, 
@@ -19,6 +21,7 @@ import {
 
 export default function StaffTabsPage() {
   const axiosSecure = useAxiosSecure();
+  const { currency } = useAuth();
   const [tabs, setTabs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [expandedStaffId, setExpandedStaffId] = useState(null);
@@ -110,7 +113,7 @@ export default function StaffTabsPage() {
       if (res.data?.success) {
         setFeedback({
           type: 'success',
-          message: `Successfully settled ${res.data.data.settledCount} transaction(s) ($${(res.data.data.totalSettledInCents / 100).toFixed(2)}) via ${paymentMethod}`
+          message: `Successfully settled ${res.data.data.settledCount} transaction(s) (${formatCurrency(res.data.data.totalSettledInCents, currency)}) via ${paymentMethod}`
         });
         // Refresh tabs
         await fetchConsolidatedTabs();
@@ -153,7 +156,7 @@ export default function StaffTabsPage() {
             <div className="px-4 py-2 bg-slate-900 border border-slate-800 rounded-xl text-right">
               <div className="text-xs text-slate-400 font-semibold">Total Outstanding Tabs</div>
               <div className="text-xl font-extrabold text-amber-400 font-mono">
-                ${(totalOutstandingCents / 100).toFixed(2)}
+                {formatCurrency(totalOutstandingCents, currency)}
               </div>
             </div>
           </div>
@@ -188,7 +191,6 @@ export default function StaffTabsPage() {
           <div className="space-y-4">
             {tabs.map((tab) => {
               const isExpanded = expandedStaffId === tab._id;
-              const owedFormatted = (tab.totalOwedInCents / 100).toFixed(2);
 
               return (
                 <div
@@ -216,7 +218,7 @@ export default function StaffTabsPage() {
                       <div className="text-right">
                         <div className="text-xs text-slate-400 font-medium">Balance Due</div>
                         <div className="text-lg sm:text-xl font-extrabold text-amber-400 font-mono">
-                          ${owedFormatted}
+                          {formatCurrency(tab.totalOwedInCents, currency)}
                         </div>
                       </div>
 
@@ -267,10 +269,10 @@ export default function StaffTabsPage() {
                                   <div>
                                     <div className="text-sm font-bold text-white">{item.productName}</div>
                                     <div className="text-xs text-slate-400">
-                                      {item.totalQuantity}x @ ${(item.unitPriceInCents / 100).toFixed(2)}
+                                      {item.totalQuantity}x @ {formatCurrency(item.unitPriceInCents, currency)}
                                       {item.totalDiscountInCents > 0 && (
                                         <span className="text-emerald-400 ml-2">
-                                          (Disc: -${(item.totalDiscountInCents / 100).toFixed(2)})
+                                          (Disc: -{formatCurrency(item.totalDiscountInCents, currency)})
                                         </span>
                                       )}
                                     </div>
@@ -278,7 +280,7 @@ export default function StaffTabsPage() {
                                 </div>
 
                                 <div className="text-right font-mono font-bold text-white text-sm">
-                                  ${(item.totalAmountInCents / 100).toFixed(2)}
+                                  {formatCurrency(item.totalAmountInCents, currency)}
                                 </div>
                               </div>
 
@@ -391,7 +393,7 @@ export default function StaffTabsPage() {
                       </div>
 
                       <div className="font-mono font-bold text-sm">
-                        ${(txn.grandTotalInCents / 100).toFixed(2)}
+                        {formatCurrency(txn.grandTotalInCents, currency)}
                       </div>
                     </div>
                   );
@@ -424,7 +426,7 @@ export default function StaffTabsPage() {
                 <div>
                   <div className="text-xs text-slate-400">Selected ({selectedTxnIds.length} txns):</div>
                   <div className="text-xl font-black text-amber-400 font-mono">
-                    ${(selectedTotalInCents / 100).toFixed(2)}
+                    {formatCurrency(selectedTotalInCents, currency)}
                   </div>
                 </div>
 
@@ -443,7 +445,7 @@ export default function StaffTabsPage() {
                     onClick={handleExecuteSettlement}
                     className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-bold text-sm rounded-xl shadow-lg shadow-emerald-600/20 disabled:opacity-50 transition"
                   >
-                    {settleLoading ? 'Settling...' : `Settle Selected ($${(selectedTotalInCents / 100).toFixed(2)})`}
+                    {settleLoading ? 'Settling...' : `Settle Selected (${formatCurrency(selectedTotalInCents, currency)})`}
                   </button>
                 </div>
               </div>
