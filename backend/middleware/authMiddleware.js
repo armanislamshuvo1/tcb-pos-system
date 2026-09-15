@@ -19,8 +19,11 @@ exports.authenticateToken = async (req, res, next) => {
       const decoded = jwt.verify(token, jwtSecret);
       if (decoded && decoded.id) {
         const localUser = await User.findById(decoded.id);
-        if (!localUser || !localUser.isActive) {
-          return res.status(403).json({ success: false, message: 'User account is inactive or not found' });
+        if (!localUser) {
+          return res.status(401).json({ success: false, message: 'User account not found or session invalid. Please log in again.' });
+        }
+        if (!localUser.isActive) {
+          return res.status(403).json({ success: false, message: 'User account is inactive. Please contact administrator.' });
         }
         req.user = {
           uid: localUser.firebaseUid || String(localUser._id),
