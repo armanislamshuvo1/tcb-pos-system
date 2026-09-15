@@ -322,3 +322,35 @@ exports.getLedger = async (req, res, next) => {
     next(error);
   }
 };
+
+// @desc    Get Transaction by ID or TXN Number
+// @route   GET /api/transactions/:id
+// @access  Authenticated
+exports.getTransactionById = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const filter = {};
+    if (mongoose.Types.ObjectId.isValid(id)) {
+      filter._id = id;
+    } else {
+      filter.txnNumber = id;
+    }
+
+    if (req.user && req.user.role !== 'system_admin' && req.user.companyId) {
+      filter.companyId = req.user.companyId;
+    }
+
+    const transaction = await Transaction.findOne(filter).lean();
+    if (!transaction) {
+      return res.status(404).json({ success: false, message: 'Transaction not found' });
+    }
+
+    res.status(200).json({
+      success: true,
+      data: transaction
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
