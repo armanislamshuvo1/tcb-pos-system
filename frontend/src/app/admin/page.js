@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import Header from '../../components/Header';
 import { useAxiosSecure } from '../../hooks/useApi';
 import { useAuth } from '../../context/AuthContext';
+import { formatCurrency, SUPPORTED_CURRENCIES } from '../../utils/currency';
 import { 
   FolderKanban, 
   Plus, 
@@ -16,18 +17,22 @@ import {
   UserPlus,
   Edit2,
   Trash2,
-  X
+  X,
+  Coins,
+  Building2,
+  Crown
 } from 'lucide-react';
 
 export default function AdminCatalogPage() {
   const axiosSecure = useAxiosSecure();
-  const { role } = useAuth();
+  const { role, currency, company, updateActiveCompany } = useAuth();
 
-  const [activeTab, setActiveTab] = useState('products'); // 'products', 'categories', 'users', 'discounts'
+  const [activeTab, setActiveTab] = useState('products'); // 'products', 'categories', 'users', 'discounts', 'settings', 'companies'
   const [categories, setCategories] = useState([]);
   const [products, setProducts] = useState([]);
   const [discounts, setDiscounts] = useState([]);
   const [users, setUsers] = useState([]);
+  const [companies, setCompanies] = useState([]);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState(null);
 
@@ -59,12 +64,21 @@ export default function AdminCatalogPage() {
   const [editCatOrder, setEditCatOrder] = useState('0');
   const [editCatColor, setEditCatColor] = useState('#3B82F6');
 
-  // User & Staff Form State
+  // User & Staff Form State (Create)
   const [userFullName, setUserFullName] = useState('');
   const [userEmail, setUserEmail] = useState('');
   const [userEmployeeCode, setUserEmployeeCode] = useState('');
   const [userRole, setUserRole] = useState('staff');
   const [userPassword, setUserPassword] = useState('password123');
+
+  // User Edit Modal State
+  const [editingUser, setEditingUser] = useState(null);
+  const [editUserFullName, setEditUserFullName] = useState('');
+  const [editUserEmail, setEditUserEmail] = useState('');
+  const [editUserEmployeeCode, setEditUserEmployeeCode] = useState('');
+  const [editUserRole, setEditUserRole] = useState('staff');
+  const [editUserPinCode, setEditUserPinCode] = useState('');
+  const [editUserIsActive, setEditUserIsActive] = useState(true);
 
   // Discount Form State
   const [discName, setDiscName] = useState('');
@@ -73,6 +87,43 @@ export default function AdminCatalogPage() {
   const [discProductId, setDiscProductId] = useState('');
   const [discValue, setDiscValue] = useState('10');
   const [discIsPreset, setDiscIsPreset] = useState(true);
+
+  // Company Settings & Active Currency State
+  const [settingCurrencyCode, setSettingCurrencyCode] = useState(currency?.code || 'MYR');
+  const [settingCurrencySymbol, setSettingCurrencySymbol] = useState(currency?.symbol || 'RM');
+  const [settingDisplayName, setSettingDisplayName] = useState(company?.branding?.displayName || '');
+  const [settingsSaving, setSettingsSaving] = useState(false);
+
+  // B2B Companies State (System Admin)
+  const [editingCompany, setEditingCompany] = useState(null);
+  const [companyName, setCompanyName] = useState('');
+  const [companyCode, setCompanyCode] = useState('');
+  const [companyDisplayName, setCompanyDisplayName] = useState('');
+  const [companyLogoText, setCompanyLogoText] = useState('');
+  const [companyThemeColor, setCompanyThemeColor] = useState('#F59E0B');
+  const [companyCurrencyCode, setCompanyCurrencyCode] = useState('MYR');
+  const [companyCurrencySymbol, setCompanyCurrencySymbol] = useState('RM');
+  const [companyEmail, setCompanyEmail] = useState('');
+  const [companyPhone, setCompanyPhone] = useState('');
+
+  // Edit Company Modal State
+  const [editCompName, setEditCompName] = useState('');
+  const [editCompCode, setEditCompCode] = useState('');
+  const [editCompDisplayName, setEditCompDisplayName] = useState('');
+  const [editCompLogoText, setEditCompLogoText] = useState('');
+  const [editCompThemeColor, setEditCompThemeColor] = useState('#F59E0B');
+  const [editCompCurrencyCode, setEditCompCurrencyCode] = useState('MYR');
+  const [editCompCurrencySymbol, setEditCompCurrencySymbol] = useState('RM');
+  const [editCompEmail, setEditCompEmail] = useState('');
+  const [editCompPhone, setEditCompPhone] = useState('');
+  const [editCompIsActive, setEditCompIsActive] = useState(true);
+
+  // Sync currency/company changes from AuthContext
+  useEffect(() => {
+    if (currency?.code) setSettingCurrencyCode(currency.code);
+    if (currency?.symbol) setSettingCurrencySymbol(currency.symbol);
+    if (company?.branding?.displayName) setSettingDisplayName(company.branding.displayName);
+  }, [currency, company]);
 
   const fetchCatalogData = async () => {
     try {
@@ -98,6 +149,11 @@ export default function AdminCatalogPage() {
       }
       if (discRes?.data?.success) setDiscounts(discRes.data.data);
       if (userRes?.data?.success) setUsers(userRes.data.data);
+
+      if (role === 'system_admin') {
+        const compRes = await axiosSecure.get('/api/companies').catch(() => null);
+        if (compRes?.data?.success) setCompanies(compRes.data.data);
+      }
     } catch (err) {
       console.error('Error fetching admin data:', err);
     } finally {
@@ -107,7 +163,7 @@ export default function AdminCatalogPage() {
 
   useEffect(() => {
     fetchCatalogData();
-  }, [axiosSecure]);
+  }, [axiosSecure, role]);
 
   // =========================================================================
   // CATEGORY HANDLERS (Create, Edit, Delete)
@@ -291,6 +347,163 @@ export default function AdminCatalogPage() {
     }
   };
 
+  const openEditUserModal = (user) => {
+    setEditingUser(user);
+    setEditUserFullName(user.fullName || '');
+    setEditUserEmail(user.email || '');
+    setEditUserEmployeeCode(user.employeeCode || '');
+    setEditUserRole(user.role || 'staff');
+    setEditUserPinCode('');
+    setEditUserIsActive(user.isActive !== false);
+  };
+
+  const handleUpdateUser = async (e) => {
+    e.preventDefault();
+    try {
+      const payload = {
+        fullName: editUserFullName.trim(),
+        email: editUserEmail.trim().toLowerCase(),
+        employeeCode: editUserEmployeeCode.trim().toUpperCase(),
+        role: editUserRole,
+        isActive: editUserIsActive
+      };
+      if (editUserPinCode.trim()) {
+        payload.pinCode = editUserPinCode.trim();
+      }
+
+      const res = await axiosSecure.put(`/api/admin/users/${editingUser._id}`, payload);
+      if (res.data?.success) {
+        setMessage({ type: 'success', text: `User "${editUserFullName}" updated successfully!` });
+        setEditingUser(null);
+        fetchCatalogData();
+      }
+    } catch (err) {
+      setMessage({ type: 'error', text: err.response?.data?.message || 'Failed to update user' });
+    }
+  };
+
+  // =========================================================================
+  // COMPANY SETTINGS & CURRENCY HANDLERS
+  // =========================================================================
+  const handleSaveCurrencySettings = async (e) => {
+    e.preventDefault();
+    setSettingsSaving(true);
+    try {
+      const res = await axiosSecure.put('/api/companies/my/settings', {
+        currency: {
+          code: settingCurrencyCode.trim().toUpperCase(),
+          symbol: settingCurrencySymbol.trim()
+        },
+        branding: {
+          displayName: settingDisplayName.trim()
+        }
+      });
+
+      if (res.data?.success) {
+        setMessage({ type: 'success', text: 'Currency and company settings updated successfully!' });
+        updateActiveCompany(res.data.data);
+      }
+    } catch (err) {
+      setMessage({ type: 'error', text: err.response?.data?.message || 'Failed to update settings' });
+    } finally {
+      setSettingsSaving(false);
+    }
+  };
+
+  // =========================================================================
+  // B2B COMPANY HANDLERS (System Admin)
+  // =========================================================================
+  const fetchCompanies = async () => {
+    try {
+      const res = await axiosSecure.get('/api/companies');
+      if (res.data?.success) {
+        setCompanies(res.data.data);
+      }
+    } catch (err) {
+      console.error('Failed to fetch companies:', err);
+    }
+  };
+
+  const handleCreateCompany = async (e) => {
+    e.preventDefault();
+    try {
+      const res = await axiosSecure.post('/api/companies', {
+        name: companyName.trim(),
+        code: companyCode.trim().toUpperCase(),
+        branding: {
+          displayName: companyDisplayName.trim() || companyName.trim(),
+          logoText: companyLogoText.trim() || companyName.trim().charAt(0).toUpperCase(),
+          themeColor: companyThemeColor
+        },
+        currency: {
+          code: companyCurrencyCode.trim().toUpperCase(),
+          symbol: companyCurrencySymbol.trim()
+        },
+        contactEmail: companyEmail.trim(),
+        contactPhone: companyPhone.trim()
+      });
+
+      if (res.data?.success) {
+        setMessage({ type: 'success', text: `Company "${companyName}" provisioned successfully!` });
+        setCompanyName('');
+        setCompanyCode('');
+        setCompanyDisplayName('');
+        setCompanyLogoText('');
+        setCompanyEmail('');
+        setCompanyPhone('');
+        fetchCompanies();
+      }
+    } catch (err) {
+      setMessage({ type: 'error', text: err.response?.data?.message || 'Failed to create company' });
+    }
+  };
+
+  const openEditCompanyModal = (comp) => {
+    setEditingCompany(comp);
+    setEditCompName(comp.name || '');
+    setEditCompCode(comp.code || '');
+    setEditCompDisplayName(comp.branding?.displayName || '');
+    setEditCompLogoText(comp.branding?.logoText || '');
+    setEditCompThemeColor(comp.branding?.themeColor || '#F59E0B');
+    setEditCompCurrencyCode(comp.currency?.code || 'MYR');
+    setEditCompCurrencySymbol(comp.currency?.symbol || 'RM');
+    setEditCompEmail(comp.contactEmail || '');
+    setEditCompPhone(comp.contactPhone || '');
+    setEditCompAddress(comp.address || '');
+    setEditCompIsActive(comp.isActive !== false);
+  };
+
+  const handleUpdateCompany = async (e) => {
+    e.preventDefault();
+    try {
+      const res = await axiosSecure.put(`/api/companies/${editingCompany._id}`, {
+        name: editCompName.trim(),
+        code: editCompCode.trim().toUpperCase(),
+        branding: {
+          displayName: editCompDisplayName.trim(),
+          logoText: editCompLogoText.trim(),
+          themeColor: editCompThemeColor
+        },
+        currency: {
+          code: editCompCurrencyCode.trim().toUpperCase(),
+          symbol: editCompCurrencySymbol.trim()
+        },
+        contactEmail: editCompEmail.trim(),
+        contactPhone: editCompPhone.trim(),
+        address: editCompAddress.trim(),
+        isActive: editCompIsActive
+      });
+
+      if (res.data?.success) {
+        setMessage({ type: 'success', text: `Company "${editCompName}" updated successfully!` });
+        setEditingCompany(null);
+        fetchCompanies();
+      }
+    } catch (err) {
+      setMessage({ type: 'error', text: err.response?.data?.message || 'Failed to update company' });
+    }
+  };
+
   // =========================================================================
   // DISCOUNT HANDLERS (Create, Delete)
   // =========================================================================
@@ -386,6 +599,26 @@ export default function AdminCatalogPage() {
               <Tag className="w-3.5 h-3.5" />
               <span>4. Discounts ({discounts.length})</span>
             </button>
+            <button
+              onClick={() => setActiveTab('settings')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center space-x-1.5 ${
+                activeTab === 'settings' ? 'bg-amber-500 text-black shadow-md' : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <Coins className="w-3.5 h-3.5" />
+              <span>5. Currency & Settings</span>
+            </button>
+            {role === 'system_admin' && (
+              <button
+                onClick={() => { setActiveTab('companies'); fetchCompanies(); }}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center space-x-1.5 ${
+                  activeTab === 'companies' ? 'bg-amber-500 text-black shadow-md' : 'text-amber-400/90 hover:text-amber-300'
+                }`}
+              >
+                <Crown className="w-3.5 h-3.5 text-amber-400" />
+                <span>6. B2B Companies ({companies.length})</span>
+              </button>
+            )}
           </div>
         </div>
 
@@ -473,7 +706,9 @@ export default function AdminCatalogPage() {
 
                   <div className="grid grid-cols-2 gap-2">
                     <div>
-                      <label className="block text-xs font-semibold text-slate-300 mb-1">Selling Price ($) *</label>
+                      <label className="block text-xs font-semibold text-slate-300 mb-1">
+                        Selling Price ({currency?.symbol || 'RM'}) *
+                      </label>
                       <input
                         type="number"
                         step="0.01"
@@ -486,7 +721,9 @@ export default function AdminCatalogPage() {
                     </div>
 
                     <div>
-                      <label className="block text-xs font-semibold text-slate-300 mb-1">Cost Price ($)</label>
+                      <label className="block text-xs font-semibold text-slate-300 mb-1">
+                        Cost Price ({currency?.symbol || 'RM'})
+                      </label>
                       <input
                         type="number"
                         step="0.01"
@@ -551,10 +788,10 @@ export default function AdminCatalogPage() {
                         </span>
                       </td>
                       <td className="py-3 px-3 font-mono font-bold text-amber-400">
-                        ${(p.priceInCents / 100).toFixed(2)}
+                        {formatCurrency(p.priceInCents, currency)}
                       </td>
                       <td className="py-3 px-3 font-mono text-slate-400">
-                        ${(p.costInCents / 100).toFixed(2)}
+                        {formatCurrency(p.costInCents, currency)}
                       </td>
                       <td className="py-3 px-3 font-mono text-slate-300">
                         {p.stockQuantity}
@@ -716,6 +953,9 @@ export default function AdminCatalogPage() {
                     <option value="staff">Staff Member (Opens Tabs at POS)</option>
                     <option value="cashier">Cashier (Operates POS Terminal)</option>
                     <option value="admin">Administrator (Full Access)</option>
+                    {role === 'system_admin' && (
+                      <option value="system_admin">System Admin (B2B Multi-Tenant)</option>
+                    )}
                   </select>
                 </div>
 
@@ -797,6 +1037,7 @@ export default function AdminCatalogPage() {
                     <th className="py-2.5 px-3 font-semibold">Login ID</th>
                     <th className="py-2.5 px-3 font-semibold">Terminal PIN</th>
                     <th className="py-2.5 px-3 font-semibold">Status</th>
+                    <th className="py-2.5 px-3 font-semibold text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800">
@@ -808,13 +1049,15 @@ export default function AdminCatalogPage() {
                       </td>
                       <td className="py-3 px-3">
                         <span className={`text-xs px-2.5 py-0.5 rounded-full font-bold border uppercase ${
-                          u.role === 'admin' 
+                          u.role === 'system_admin'
+                            ? 'bg-amber-950/90 text-amber-300 border-amber-500'
+                            : u.role === 'admin' 
                             ? 'bg-purple-950/80 text-purple-400 border-purple-800'
                             : u.role === 'cashier'
                             ? 'bg-amber-950/80 text-amber-400 border-amber-800'
                             : 'bg-blue-950/80 text-blue-400 border-blue-800'
                         }`}>
-                          {u.role}
+                          {u.role === 'system_admin' ? 'SYS ADMIN' : u.role}
                         </span>
                       </td>
                       <td className="py-3 px-3 font-mono font-bold text-amber-400 text-xs">
@@ -822,13 +1065,30 @@ export default function AdminCatalogPage() {
                       </td>
                       <td className="py-3 px-3 font-mono text-xs text-slate-200">
                         <span className="px-2 py-1 rounded bg-slate-800 border border-slate-700 font-bold text-amber-300">
-                          {u.pinCode || '1234'}
+                          {u.pinCode || '••••'}
                         </span>
                       </td>
                       <td className="py-3 px-3">
-                        <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-950 text-emerald-400 border border-emerald-800 font-bold">
-                          ACTIVE
-                        </span>
+                        {u.isActive !== false ? (
+                          <span className="text-xs px-2.5 py-0.5 rounded-full bg-emerald-950 text-emerald-400 border border-emerald-800 font-bold">
+                            ACTIVE
+                          </span>
+                        ) : (
+                          <span className="text-xs px-2.5 py-0.5 rounded-full bg-red-950 text-red-400 border border-red-800 font-bold">
+                            INACTIVE
+                          </span>
+                        )}
+                      </td>
+                      <td className="py-3 px-3 text-right">
+                        <button
+                          type="button"
+                          onClick={() => openEditUserModal(u)}
+                          className="p-1.5 bg-slate-800 hover:bg-slate-700 text-amber-400 rounded-lg transition inline-flex items-center space-x-1"
+                          title="Edit User Profile"
+                        >
+                          <Edit2 className="w-3.5 h-3.5" />
+                          <span className="text-xs font-semibold">Edit</span>
+                        </button>
                       </td>
                     </tr>
                   ))}
@@ -877,7 +1137,7 @@ export default function AdminCatalogPage() {
                       className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-white text-xs focus:ring-2 focus:ring-amber-500"
                     >
                       <option value="percentage">Percentage (%)</option>
-                      <option value="fixed_cents">Fixed Dollar ($)</option>
+                      <option value="fixed_cents">Fixed Amount ({currency?.symbol || 'RM'})</option>
                     </select>
                   </div>
 
@@ -909,7 +1169,7 @@ export default function AdminCatalogPage() {
                     >
                       {products.map((prod) => (
                         <option key={prod._id} value={prod._id}>
-                          {prod.name} (${(prod.priceInCents / 100).toFixed(2)})
+                          {prod.name} ({formatCurrency(prod.priceInCents, currency)})
                         </option>
                       ))}
                     </select>
@@ -918,7 +1178,7 @@ export default function AdminCatalogPage() {
 
                 <div>
                   <label className="block text-xs font-semibold text-slate-400 mb-1">
-                    Discount Value ({discType === 'percentage' ? '%' : '$'})
+                    Discount Value ({discType === 'percentage' ? '%' : (currency?.symbol || 'RM')})
                   </label>
                   <input
                     type="number"
@@ -957,7 +1217,7 @@ export default function AdminCatalogPage() {
                     </div>
                     <div className="flex items-center space-x-3">
                       <span className="font-mono font-bold text-amber-400 text-base">
-                        {d.type === 'percentage' ? `${d.value}%` : `$${(d.value / 100).toFixed(2)}`}
+                        {d.type === 'percentage' ? `${d.value}%` : formatCurrency(d.value, currency)}
                       </span>
                       <button
                         type="button"
@@ -966,6 +1226,294 @@ export default function AdminCatalogPage() {
                         title="Delete Discount Button"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ========================================================================= */}
+        {/* TAB 5: COMPANY & CURRENCY SETTINGS                                        */}
+        {/* ========================================================================= */}
+        {activeTab === 'settings' && (
+          <div className="max-w-2xl bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-6 shadow-sm">
+            <div>
+              <h2 className="text-lg font-bold text-white flex items-center space-x-2">
+                <Coins className="w-5 h-5 text-amber-400" />
+                <span>Currency & Company Configuration</span>
+              </h2>
+              <p className="text-xs text-slate-400 mt-1">
+                Configure your active trading currency and display settings across all POS terminals.
+              </p>
+            </div>
+
+            <form onSubmit={handleSaveCurrencySettings} className="space-y-4 text-sm">
+              <div className="p-4 rounded-xl bg-slate-850 border border-slate-800 space-y-2">
+                <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                  Active Currency Status
+                </div>
+                <div className="flex items-center space-x-3">
+                  <span className="text-2xl font-black text-amber-400 font-mono">
+                    {currency?.symbol || 'RM'} ({currency?.code || 'MYR'})
+                  </span>
+                  <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-950 text-emerald-400 border border-emerald-800 font-semibold">
+                    Current Active
+                  </span>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+                  Choose Currency Preset
+                </label>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                  {SUPPORTED_CURRENCIES.map((curr) => (
+                    <button
+                      key={curr.code}
+                      type="button"
+                      onClick={() => {
+                        setSettingCurrencyCode(curr.code);
+                        setSettingCurrencySymbol(curr.symbol);
+                      }}
+                      className={`p-2.5 rounded-xl text-left border transition ${
+                        settingCurrencyCode === curr.code
+                          ? 'bg-amber-500/15 border-amber-500 text-white shadow-sm'
+                          : 'bg-slate-800/80 border-slate-700/80 text-slate-300 hover:bg-slate-750'
+                      }`}
+                    >
+                      <div className="font-bold text-sm text-amber-400">{curr.symbol} - {curr.code}</div>
+                      <div className="text-[11px] text-slate-400 truncate">{curr.label}</div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">
+                    Currency Symbol *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={settingCurrencySymbol}
+                    onChange={(e) => setSettingCurrencySymbol(e.target.value)}
+                    placeholder="RM, $, S$, €, £"
+                    className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-white font-mono text-center font-bold focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">
+                    Currency ISO Code *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={settingCurrencyCode}
+                    onChange={(e) => setSettingCurrencyCode(e.target.value.toUpperCase())}
+                    placeholder="MYR, USD, SGD"
+                    className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-white font-mono text-center font-bold uppercase focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              {/* Branding Display Name */}
+              <div className="p-4 rounded-xl bg-slate-850 border border-slate-800 space-y-2">
+                <div className="text-xs font-semibold text-slate-300">
+                  Branding Display Name
+                </div>
+                <input
+                  type="text"
+                  value={settingDisplayName}
+                  onChange={(e) => setSettingDisplayName(e.target.value)}
+                  placeholder="e.g. PoS System or The Coffee Bar"
+                  className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-white focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                />
+                <span className="text-[11px] text-slate-400 block">
+                  Displayed on the POS terminal top bar, receipts, and reports header.
+                </span>
+              </div>
+
+              <button
+                type="submit"
+                disabled={settingsSaving}
+                className="w-full py-2.5 bg-amber-500 hover:bg-amber-400 text-black font-bold text-sm rounded-xl transition shadow-md disabled:opacity-50 cursor-pointer"
+              >
+                {settingsSaving ? 'Saving Settings...' : 'Save Currency & Settings'}
+              </button>
+            </form>
+          </div>
+        )}
+
+        {/* ========================================================================= */}
+        {/* TAB 6: B2B MULTI-TENANT COMPANIES (System Admin Only)                     */}
+        {/* ========================================================================= */}
+        {activeTab === 'companies' && role === 'system_admin' && (
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            {/* Create Company Form */}
+            <div className="lg:col-span-4 bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-4 shadow-sm">
+              <div>
+                <h2 className="text-base font-bold text-white flex items-center space-x-2">
+                  <Building2 className="w-4 h-4 text-amber-400" />
+                  <span>Provision B2B Company</span>
+                </h2>
+                <p className="text-xs text-slate-400 mt-1">
+                  Create a new tenant with custom branding, logo, and currency to resell the PoS System.
+                </p>
+              </div>
+
+              <form onSubmit={handleCreateCompany} className="space-y-3 text-sm">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">Legal Company Name *</label>
+                  <input
+                    type="text"
+                    required
+                    value={companyName}
+                    onChange={(e) => setCompanyName(e.target.value)}
+                    placeholder="e.g. Artisan Cafe Sdn Bhd"
+                    className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-white focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">Company Code / Slug *</label>
+                  <input
+                    type="text"
+                    required
+                    value={companyCode}
+                    onChange={(e) => setCompanyCode(e.target.value)}
+                    placeholder="e.g. ARTISAN-HQ"
+                    className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-white font-mono uppercase focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">Branding Name</label>
+                    <input
+                      type="text"
+                      value={companyDisplayName}
+                      onChange={(e) => setCompanyDisplayName(e.target.value)}
+                      placeholder="Artisan Cafe"
+                      className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-white focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">Logo Badge</label>
+                    <input
+                      type="text"
+                      maxLength="4"
+                      value={companyLogoText}
+                      onChange={(e) => setCompanyLogoText(e.target.value)}
+                      placeholder="AC"
+                      className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-white font-bold text-center uppercase focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">Currency Code</label>
+                    <input
+                      type="text"
+                      value={companyCurrencyCode}
+                      onChange={(e) => setCompanyCurrencyCode(e.target.value.toUpperCase())}
+                      placeholder="MYR"
+                      className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-white font-mono uppercase focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">Currency Symbol</label>
+                    <input
+                      type="text"
+                      value={companyCurrencySymbol}
+                      onChange={(e) => setCompanyCurrencySymbol(e.target.value)}
+                      placeholder="RM"
+                      className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-white font-mono focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">Contact Email</label>
+                  <input
+                    type="email"
+                    value={companyEmail}
+                    onChange={(e) => setCompanyEmail(e.target.value)}
+                    placeholder="contact@client.com"
+                    className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-white focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">Theme Accent Color</label>
+                  <input
+                    type="color"
+                    value={companyThemeColor}
+                    onChange={(e) => setCompanyThemeColor(e.target.value)}
+                    className="w-full h-10 p-1 bg-slate-800 border border-slate-700 rounded-xl cursor-pointer"
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  className="w-full py-2.5 bg-amber-500 hover:bg-amber-400 text-black font-bold text-sm rounded-xl transition shadow-md mt-2 cursor-pointer"
+                >
+                  Provision Company
+                </button>
+              </form>
+            </div>
+
+            {/* Companies List */}
+            <div className="lg:col-span-8 bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-sm overflow-x-auto">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h2 className="text-base font-bold text-white flex items-center space-x-2">
+                    <Building2 className="w-4 h-4 text-amber-400" />
+                    <span>Active B2B Companies ({companies.length})</span>
+                  </h2>
+                  <span className="text-xs text-slate-400">Manage client branding, currencies, and tenant accounts</span>
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                {companies.map((comp) => (
+                  <div key={comp._id} className="p-4 bg-slate-850 rounded-xl border border-slate-800 flex items-center justify-between hover:bg-slate-800/80 transition">
+                    <div className="flex items-center space-x-3.5">
+                      <div
+                        className="w-10 h-10 rounded-xl flex items-center justify-center text-black font-black text-sm shadow-md shrink-0"
+                        style={{ backgroundColor: comp.branding?.themeColor || '#F59E0B' }}
+                      >
+                        {comp.branding?.logoText || comp.name?.charAt(0) || 'P'}
+                      </div>
+                      <div>
+                        <div className="font-bold text-white text-sm flex items-center space-x-2">
+                          <span>{comp.branding?.displayName || comp.name}</span>
+                          <span className="font-mono text-xs text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">
+                            {comp.code}
+                          </span>
+                        </div>
+                        <div className="text-xs text-slate-400 mt-0.5">
+                          {comp.name} • Currency: <strong className="text-slate-300 font-mono">{comp.currency?.symbol || 'RM'} ({comp.currency?.code || 'MYR'})</strong> • Users: {comp.userCount || 0}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center space-x-2">
+                      <button
+                        type="button"
+                        onClick={() => openEditCompanyModal(comp)}
+                        className="p-2 bg-slate-800 hover:bg-slate-700 text-amber-400 rounded-lg transition inline-flex items-center space-x-1.5 cursor-pointer"
+                        title="Edit Company"
+                      >
+                        <Edit2 className="w-3.5 h-3.5" />
+                        <span className="text-xs font-semibold">Edit Branding</span>
                       </button>
                     </div>
                   </div>
@@ -1032,7 +1580,9 @@ export default function AdminCatalogPage() {
 
                 <div className="grid grid-cols-2 gap-2">
                   <div>
-                    <label className="block text-xs font-semibold text-slate-300 mb-1">Selling Price ($)</label>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">
+                      Selling Price ({currency?.symbol || 'RM'})
+                    </label>
                     <input
                       type="number"
                       step="0.01"
@@ -1044,7 +1594,9 @@ export default function AdminCatalogPage() {
                   </div>
 
                   <div>
-                    <label className="block text-xs font-semibold text-slate-300 mb-1">Cost Price ($)</label>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">
+                      Cost Price ({currency?.symbol || 'RM'})
+                    </label>
                     <input
                       type="number"
                       step="0.01"
@@ -1149,6 +1701,266 @@ export default function AdminCatalogPage() {
                     className="px-5 py-2 bg-amber-500 hover:bg-amber-400 text-black font-bold text-xs rounded-xl shadow-md transition"
                   >
                     Save Category
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* ========================================================================= */}
+        {/* EDIT USER MODAL                                                           */}
+        {/* ========================================================================= */}
+        {editingUser && (
+          <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl animate-in fade-in zoom-in-95">
+              <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                <h3 className="text-lg font-bold text-white flex items-center space-x-2">
+                  <Edit2 className="w-4 h-4 text-amber-400" />
+                  <span>Edit User: {editingUser.fullName}</span>
+                </h3>
+                <button
+                  onClick={() => setEditingUser(null)}
+                  className="text-slate-400 hover:text-white p-1 rounded-lg"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <form onSubmit={handleUpdateUser} className="space-y-3 text-sm">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">Full Name *</label>
+                  <input
+                    type="text"
+                    required
+                    value={editUserFullName}
+                    onChange={(e) => setEditUserFullName(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-white focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">Employee Code *</label>
+                  <input
+                    type="text"
+                    required
+                    value={editUserEmployeeCode}
+                    onChange={(e) => setEditUserEmployeeCode(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-white font-mono uppercase focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">Email Address *</label>
+                  <input
+                    type="email"
+                    required
+                    value={editUserEmail}
+                    onChange={(e) => setEditUserEmail(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-white focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">Role</label>
+                    <select
+                      value={editUserRole}
+                      onChange={(e) => setEditUserRole(e.target.value)}
+                      className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-white text-xs focus:ring-2 focus:ring-amber-500"
+                    >
+                      <option value="staff">Staff Member</option>
+                      <option value="cashier">Cashier</option>
+                      <option value="admin">Administrator</option>
+                      {role === 'system_admin' && (
+                        <option value="system_admin">System Admin</option>
+                      )}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">Status</label>
+                    <select
+                      value={editUserIsActive ? 'active' : 'inactive'}
+                      onChange={(e) => setEditUserIsActive(e.target.value === 'active')}
+                      className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-white text-xs focus:ring-2 focus:ring-amber-500"
+                    >
+                      <option value="active">Active</option>
+                      <option value="inactive">Inactive</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">
+                    Reset PIN Code (Optional, 4-6 Digits)
+                  </label>
+                  <input
+                    type="password"
+                    maxLength="6"
+                    value={editUserPinCode}
+                    onChange={(e) => setEditUserPinCode(e.target.value)}
+                    placeholder="Leave blank to keep existing PIN"
+                    className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-white font-mono text-center tracking-widest focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                  />
+                </div>
+
+                <div className="flex items-center justify-end space-x-2 pt-2 border-t border-slate-800">
+                  <button
+                    type="button"
+                    onClick={() => setEditingUser(null)}
+                    className="px-4 py-2 text-xs text-slate-400 hover:text-white"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-5 py-2 bg-amber-500 hover:bg-amber-400 text-black font-bold text-xs rounded-xl shadow-md transition"
+                  >
+                    Save User Profile
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* ========================================================================= */}
+        {/* EDIT COMPANY MODAL (System Admin)                                         */}
+        {/* ========================================================================= */}
+        {editingCompany && (
+          <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl animate-in fade-in zoom-in-95">
+              <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                <h3 className="text-lg font-bold text-white flex items-center space-x-2">
+                  <Building2 className="w-4 h-4 text-amber-400" />
+                  <span>Edit Company: {editingCompany.name}</span>
+                </h3>
+                <button
+                  onClick={() => setEditingCompany(null)}
+                  className="text-slate-400 hover:text-white p-1 rounded-lg"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <form onSubmit={handleUpdateCompany} className="space-y-3 text-sm">
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">Company Name</label>
+                    <input
+                      type="text"
+                      required
+                      value={editCompName}
+                      onChange={(e) => setEditCompName(e.target.value)}
+                      className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-white"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">Company Code</label>
+                    <input
+                      type="text"
+                      required
+                      value={editCompCode}
+                      onChange={(e) => setEditCompCode(e.target.value)}
+                      className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-white font-mono uppercase"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">Branding Name</label>
+                    <input
+                      type="text"
+                      value={editCompDisplayName}
+                      onChange={(e) => setEditCompDisplayName(e.target.value)}
+                      className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-white"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">Logo Badge Text</label>
+                    <input
+                      type="text"
+                      maxLength="4"
+                      value={editCompLogoText}
+                      onChange={(e) => setEditCompLogoText(e.target.value)}
+                      className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-white text-center font-bold uppercase"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">Currency Code</label>
+                    <input
+                      type="text"
+                      value={editCompCurrencyCode}
+                      onChange={(e) => setEditCompCurrencyCode(e.target.value.toUpperCase())}
+                      className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-white font-mono uppercase"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">Currency Symbol</label>
+                    <input
+                      type="text"
+                      value={editCompCurrencySymbol}
+                      onChange={(e) => setEditCompCurrencySymbol(e.target.value)}
+                      className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-white font-mono"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">Contact Email</label>
+                    <input
+                      type="email"
+                      value={editCompEmail}
+                      onChange={(e) => setEditCompEmail(e.target.value)}
+                      className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-white"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">Status</label>
+                    <select
+                      value={editCompIsActive ? 'active' : 'inactive'}
+                      onChange={(e) => setEditCompIsActive(e.target.value === 'active')}
+                      className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-white"
+                    >
+                      <option value="active">Active Tenant</option>
+                      <option value="inactive">Inactive / Suspended</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">Theme Color</label>
+                  <input
+                    type="color"
+                    value={editCompThemeColor}
+                    onChange={(e) => setEditCompThemeColor(e.target.value)}
+                    className="w-full h-10 p-1 bg-slate-800 border border-slate-700 rounded-xl cursor-pointer"
+                  />
+                </div>
+
+                <div className="flex items-center justify-end space-x-2 pt-2 border-t border-slate-800">
+                  <button
+                    type="button"
+                    onClick={() => setEditingCompany(null)}
+                    className="px-4 py-2 text-xs text-slate-400 hover:text-white"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-5 py-2 bg-amber-500 hover:bg-amber-400 text-black font-bold text-xs rounded-xl shadow-md transition"
+                  >
+                    Save Company
                   </button>
                 </div>
               </form>
