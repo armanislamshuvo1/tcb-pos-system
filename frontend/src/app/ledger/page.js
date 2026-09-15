@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import Header from '../../components/Header';
+import TransactionDetailModal from '../../components/TransactionDetailModal';
 import { useAxiosSecure } from '../../hooks/useApi';
 import { useAuth } from '../../context/AuthContext';
 import { formatCurrency } from '../../utils/currency';
@@ -14,14 +15,16 @@ import {
   Clock, 
   ChevronLeft, 
   ChevronRight,
-  TrendingDown
+  TrendingDown,
+  Eye
 } from 'lucide-react';
 
 export default function LedgerPage() {
   const axiosSecure = useAxiosSecure();
-  const { currency } = useAuth();
+  const { currency, lockTerminal } = useAuth();
 
   const [transactions, setTransactions] = useState([]);
+  const [selectedTxn, setSelectedTxn] = useState(null);
   const [summary, setSummary] = useState({
     totalRevenueInCents: 0,
     totalUnpaidInCents: 0,
@@ -29,6 +32,7 @@ export default function LedgerPage() {
   });
   const [pagination, setPagination] = useState({ currentPage: 1, totalPages: 1, totalCount: 0 });
   const [loading, setLoading] = useState(true);
+  const [errorMsg, setErrorMsg] = useState('');
 
   // Filters
   const [statusFilter, setStatusFilter] = useState('ALL'); // 'ALL', 'PAID', 'UNPAID_TAB'
@@ -39,7 +43,7 @@ export default function LedgerPage() {
 
   const fetchLedger = useCallback(async () => {
     try {
-      setLoading(true);
+      setErrorMsg('');
       const params = {
         status: statusFilter,
         page,
@@ -58,12 +62,14 @@ export default function LedgerPage() {
       }
     } catch (err) {
       console.error('Error fetching ledger:', err);
+      setErrorMsg(err.response?.data?.message || 'Failed to fetch ledger transactions');
     } finally {
       setLoading(false);
     }
   }, [axiosSecure, statusFilter, startDate, endDate, search, page]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchLedger();
   }, [fetchLedger]);
 
@@ -219,6 +225,26 @@ export default function LedgerPage() {
                     Loading ledger records...
                   </td>
                 </tr>
+              ) : errorMsg ? (
+                <tr>
+                  <td colSpan={7} className="py-8 text-center text-rose-400 space-y-3">
+                    <div className="font-semibold">{errorMsg}</div>
+                    <div className="flex items-center justify-center space-x-3">
+                      <button
+                        onClick={() => fetchLedger()}
+                        className="px-3.5 py-1.5 bg-slate-800 hover:bg-slate-750 text-white text-xs font-semibold rounded-xl border border-slate-700 transition"
+                      >
+                        Retry
+                      </button>
+                      <button
+                        onClick={() => lockTerminal?.()}
+                        className="px-3.5 py-1.5 bg-amber-500 hover:bg-amber-400 text-black text-xs font-bold rounded-xl transition shadow-md"
+                      >
+                        Re-authenticate (PIN)
+                      </button>
+                    </div>
+                  </td>
+                </tr>
               ) : transactions.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="py-8 text-center text-slate-500">
@@ -231,9 +257,18 @@ export default function LedgerPage() {
                   const formattedDate = `${dateObj.toLocaleDateString()} ${dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
 
                   return (
-                    <tr key={txn._id} className="hover:bg-slate-850/50 transition">
+                    <tr
+                      key={txn._id}
+                      onClick={() => setSelectedTxn(txn)}
+                      className="hover:bg-slate-800/60 cursor-pointer transition group"
+                    >
                       <td className="py-3.5 px-4 font-mono font-bold text-amber-400 text-xs">
-                        {txn.txnNumber}
+                        <div className="flex items-center space-x-1.5 group-hover:text-amber-300">
+                          <span className="underline decoration-amber-500/30 underline-offset-2 group-hover:decoration-amber-400">
+                            {txn.txnNumber}
+                          </span>
+                          <Eye className="w-3.5 h-3.5 opacity-0 group-hover:opacity-100 transition-opacity text-amber-400 shrink-0" />
+                        </div>
                       </td>
                       <td className="py-3.5 px-4">
                         <span className={`text-xs font-bold px-2.5 py-0.5 rounded-full border ${
@@ -315,6 +350,14 @@ export default function LedgerPage() {
             </div>
           )}
         </div>
+
+        {/* Transaction Detail Modal */}
+        {selectedTxn && (
+          <TransactionDetailModal
+            txn={selectedTxn}
+            onClose={() => setSelectedTxn(null)}
+          />
+        )}
       </main>
     </div>
   );
