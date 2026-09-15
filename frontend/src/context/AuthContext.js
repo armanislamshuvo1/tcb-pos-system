@@ -72,11 +72,34 @@ export const AuthProvider = ({ children }) => {
     logout();
   }, [logout]);
 
+  const company = user?.company || {
+    name: 'PoS System',
+    branding: { displayName: 'PoS System', logoText: 'P', themeColor: '#F59E0B' },
+    currency: { code: 'MYR', symbol: 'RM' }
+  };
+
+  const currency = company?.currency || { code: 'MYR', symbol: 'RM' };
+
+  const updateActiveCompany = (updatedCompany) => {
+    setUser((prev) => {
+      if (!prev) return prev;
+      const nextUser = {
+        ...prev,
+        company: updatedCompany
+      };
+      localStorage.setItem('pos_user', JSON.stringify(nextUser));
+      return nextUser;
+    });
+  };
+
   return (
     <AuthContext.Provider value={{ 
       user, 
       token, 
-      role: user?.role, 
+      role: user?.role,
+      company,
+      currency,
+      updateActiveCompany,
       loginWithPin, 
       logout,
       lockTerminal, 

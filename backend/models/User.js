@@ -29,9 +29,14 @@ const userSchema = new mongoose.Schema({
   },
   role: { 
     type: String, 
-    enum: ['admin', 'cashier', 'staff'], 
+    enum: ['system_admin', 'admin', 'cashier', 'staff'], 
     default: 'cashier',
     required: true 
+  },
+  companyId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Company',
+    index: true
   },
   pinCode: {
     type: String,

@@ -28,7 +28,8 @@ exports.authenticateToken = async (req, res, next) => {
           mongoId: localUser._id,
           fullName: localUser.fullName,
           employeeCode: localUser.employeeCode,
-          email: localUser.email
+          email: localUser.email,
+          companyId: localUser.companyId
         };
         return next();
       }
@@ -51,7 +52,8 @@ exports.authenticateToken = async (req, res, next) => {
             mongoId: localUser._id,
             fullName: localUser.fullName,
             employeeCode: localUser.employeeCode,
-            email: localUser.email
+            email: localUser.email,
+            companyId: localUser.companyId
           };
           return next();
         }
@@ -68,7 +70,14 @@ exports.authenticateToken = async (req, res, next) => {
 
 exports.requireRole = (...allowedRoles) => {
   return (req, res, next) => {
-    if (!req.user || !allowedRoles.includes(req.user.role)) {
+    if (!req.user) {
+      return res.status(401).json({ success: false, message: 'Unauthenticated' });
+    }
+    // system_admin has superrole privileges across all admin operations
+    if (req.user.role === 'system_admin') {
+      return next();
+    }
+    if (!allowedRoles.includes(req.user.role)) {
       return res.status(403).json({ 
         success: false, 
         message: `Forbidden: Requires one of [${allowedRoles.join(', ')}] role` 

@@ -78,6 +78,16 @@ const transactionSchema = new mongoose.Schema({
   settledByCashierId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   settledByCashierNameSnapshot: { type: String },
   
+  companyId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Company',
+    index: true
+  },
+  currency: {
+    code: { type: String, default: 'MYR' },
+    symbol: { type: String, default: 'RM' }
+  },
+
   notes: { type: String }
 }, { timestamps: true });
 

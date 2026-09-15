@@ -4,6 +4,7 @@ const Category = require('../models/Category');
 const Product = require('../models/Product');
 const Discount = require('../models/Discount');
 const User = require('../models/User');
+const Company = require('../models/Company');
 
 const seedData = async () => {
   const mongoUri = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/tcb_pos_tab';
@@ -17,9 +18,29 @@ const seedData = async () => {
       Category.deleteMany({}),
       Product.deleteMany({}),
       Discount.deleteMany({}),
-      User.deleteMany({})
+      User.deleteMany({}),
+      Company.deleteMany({})
     ]);
-    console.log('[Seed] Cleared existing categories, products, discounts, and users.');
+    console.log('[Seed] Cleared existing categories, products, discounts, users, and companies.');
+
+    // 0. Create Default Company
+    const defaultCompany = await Company.create({
+      name: 'PoS System HQ',
+      code: 'POS-HQ',
+      branding: {
+        displayName: 'PoS System',
+        logoText: 'P',
+        themeColor: '#F59E0B'
+      },
+      currency: {
+        code: 'MYR',
+        symbol: 'RM'
+      },
+      address: 'Main Terminal',
+      contactEmail: 'admin@possystem.com',
+      isActive: true
+    });
+    console.log(`[Seed] Created Default Company: ${defaultCompany.name} (${defaultCompany.currency.symbol})`);
 
     // 1. Create Categories
     const categories = await Category.create([
@@ -158,16 +179,17 @@ const seedData = async () => {
     ]);
     console.log(`[Seed] Created ${discounts.length} preset discounts.`);
 
-    // 4. Create Default Admin User (no hardcoded fake users)
+    // 4. Create Default System Admin User
     const adminUser = await User.create({
       email: 'arman@tcbpos.com',
       fullName: 'Arman',
       employeeCode: 'ADM-001',
-      role: 'admin',
+      role: 'system_admin',
+      companyId: defaultCompany._id,
       pinCode: '276266',
       isActive: true
     });
-    console.log(`[Seed] Created Default Admin User: ${adminUser.email} (${adminUser.employeeCode})`);
+    console.log(`[Seed] Created Default System Admin User: ${adminUser.email} (${adminUser.employeeCode})`);
 
     console.log('[Seed] Database seeding completed successfully!');
     process.exit(0);

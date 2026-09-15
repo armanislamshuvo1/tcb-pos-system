@@ -13,6 +13,8 @@ const userRoutes = require('./routes/userRoutes');
 const transactionRoutes = require('./routes/transactionRoutes');
 const tabRoutes = require('./routes/tabRoutes');
 const reportRoutes = require('./routes/reportRoutes');
+const companyRoutes = require('./routes/companyRoutes');
+const runMigration = require('./scripts/migrateSystemAdmin');
 
 const helmet = require('helmet');
 
@@ -22,8 +24,10 @@ const PORT = process.env.PORT || 5000;
 // Trust reverse proxy (Render, Heroku, Nginx) so express-rate-limit correctly identifies client IPs from X-Forwarded-For
 app.set('trust proxy', 1);
 
-// Connect to MongoDB
-connectDB();
+// Connect to MongoDB & Run Seamless Multi-Tenant Migration
+connectDB().then(() => {
+  runMigration().catch((err) => console.error('[Auto-Migration Warning]:', err.message));
+});
 
 // Security Middleware
 app.use(helmet({
@@ -59,6 +63,7 @@ app.use('/api', userRoutes); // Mounts /api/staff and /api/admin/users/create
 app.use('/api/transactions', transactionRoutes);
 app.use('/api/tabs', tabRoutes);
 app.use('/api/reports', reportRoutes);
+app.use('/api/companies', companyRoutes);
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
