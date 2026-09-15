@@ -22,9 +22,11 @@ const calculateLineFinancials = (unitPriceInCents, quantity, discountType, disco
 export const useCartStore = create((set, get) => ({
   items: [],
   globalDiscount: { type: 'none', value: 0 },
+  customer: null, // Attached customer { _id, name, phone } or custom { name }
   staffMember: null, // Attached staff member for tab
   notes: '',
 
+  setCustomer: (customer) => set({ customer }),
   setStaffMember: (staff) => set({ staffMember: staff }),
 
   setNotes: (notes) => set({ notes }),
@@ -139,6 +141,7 @@ export const useCartStore = create((set, get) => ({
     set({
       items: [],
       globalDiscount: { type: 'none', value: 0 },
+      customer: null,
       staffMember: null,
       notes: ''
     });

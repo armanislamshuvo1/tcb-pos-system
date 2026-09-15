@@ -20,7 +20,10 @@ import {
   X,
   Coins,
   Building2,
-  Crown
+  Crown,
+  UserCheck,
+  Phone,
+  Search
 } from 'lucide-react';
 
 export default function AdminCatalogPage() {
@@ -32,9 +35,18 @@ export default function AdminCatalogPage() {
   const [products, setProducts] = useState([]);
   const [discounts, setDiscounts] = useState([]);
   const [users, setUsers] = useState([]);
+  const [customers, setCustomers] = useState([]);
   const [companies, setCompanies] = useState([]);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState(null);
+
+  // Customer Form State
+  const [custName, setCustName] = useState('');
+  const [custPhone, setCustPhone] = useState('');
+  const [custEmail, setCustEmail] = useState('');
+  const [custNotes, setCustNotes] = useState('');
+  const [custSearch, setCustSearch] = useState('');
+  const [custSaving, setCustSaving] = useState(false);
 
   // Category Form State
   const [catName, setCatName] = useState('');
@@ -133,6 +145,7 @@ export default function AdminCatalogPage() {
   const [editCompCurrencySymbol, setEditCompCurrencySymbol] = useState('RM');
   const [editCompEmail, setEditCompEmail] = useState('');
   const [editCompPhone, setEditCompPhone] = useState('');
+  const [editCompAddress, setEditCompAddress] = useState('');
   const [editCompIsActive, setEditCompIsActive] = useState(true);
 
   // Sync currency/company changes from AuthContext
@@ -145,11 +158,12 @@ export default function AdminCatalogPage() {
   const fetchCatalogData = async () => {
     try {
       setLoading(true);
-      const [catRes, prodRes, discRes, userRes] = await Promise.all([
+      const [catRes, prodRes, discRes, userRes, custRes] = await Promise.all([
         axiosSecure.get('/api/categories').catch(() => null),
         axiosSecure.get('/api/products?activeOnly=false').catch(() => null),
         axiosSecure.get('/api/discounts/admin').catch(() => null),
-        axiosSecure.get('/api/admin/users').catch(() => null)
+        axiosSecure.get('/api/admin/users').catch(() => null),
+        axiosSecure.get('/api/customers').catch(() => null)
       ]);
 
       if (catRes?.data?.success) {
@@ -166,6 +180,7 @@ export default function AdminCatalogPage() {
       }
       if (discRes?.data?.success) setDiscounts(discRes.data.data);
       if (userRes?.data?.success) setUsers(userRes.data.data);
+      if (custRes?.data?.success) setCustomers(custRes.data.data);
 
       if (role === 'system_admin') {
         const compRes = await axiosSecure.get('/api/companies').catch(() => null);
@@ -175,6 +190,36 @@ export default function AdminCatalogPage() {
       console.error('Error fetching admin data:', err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleCreateCustomerAdmin = async (e) => {
+    e.preventDefault();
+    setMessage(null);
+    if (!custName.trim()) {
+      setMessage({ type: 'error', text: 'Customer name is required' });
+      return;
+    }
+    setCustSaving(true);
+    try {
+      const res = await axiosSecure.post('/api/customers', {
+        name: custName.trim(),
+        phone: custPhone.trim(),
+        email: custEmail.trim(),
+        notes: custNotes.trim()
+      });
+      if (res.data?.success) {
+        setMessage({ type: 'success', text: `Customer "${custName}" added successfully!` });
+        setCustName('');
+        setCustPhone('');
+        setCustEmail('');
+        setCustNotes('');
+        fetchCatalogData();
+      }
+    } catch (err) {
+      setMessage({ type: 'error', text: err.response?.data?.message || 'Failed to add customer' });
+    } finally {
+      setCustSaving(false);
     }
   };
 
@@ -657,13 +702,22 @@ export default function AdminCatalogPage() {
               <span>2. Categories ({categories.length})</span>
             </button>
             <button
+              onClick={() => setActiveTab('customers')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center space-x-1.5 ${
+                activeTab === 'customers' ? 'bg-amber-500 text-black shadow-md' : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <UserCheck className="w-3.5 h-3.5" />
+              <span>3. Customers ({customers.length})</span>
+            </button>
+            <button
               onClick={() => setActiveTab('users')}
               className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center space-x-1.5 ${
                 activeTab === 'users' ? 'bg-amber-500 text-black shadow-md' : 'text-slate-400 hover:text-white'
               }`}
             >
               <Users className="w-3.5 h-3.5" />
-              <span>3. Users & Staff ({users.length})</span>
+              <span>4. Users & Staff ({users.length})</span>
             </button>
             <button
               onClick={() => setActiveTab('discounts')}
@@ -1001,7 +1055,143 @@ export default function AdminCatalogPage() {
         )}
 
         {/* ========================================================================= */}
-        {/* TAB 3: USERS & STAFF MANAGEMENT                                          */}
+        {/* TAB 3: CUSTOMERS DIRECTORY & MANAGEMENT                                   */}
+        {/* ========================================================================= */}
+        {activeTab === 'customers' && (
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            {/* Create Customer Form */}
+            <div className="lg:col-span-4 bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-4 shadow-sm">
+              <div>
+                <h2 className="text-base font-bold text-white flex items-center space-x-2">
+                  <UserPlus className="w-4 h-4 text-amber-400" />
+                  <span>Register New Customer</span>
+                </h2>
+                <p className="text-xs text-slate-400 mt-1">
+                  Add customer profiles to easily attach them to sales and maintain customer bills.
+                </p>
+              </div>
+
+              <form onSubmit={handleCreateCustomerAdmin} className="space-y-3 text-sm">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">Customer Full Name *</label>
+                  <input
+                    type="text"
+                    required
+                    value={custName}
+                    onChange={(e) => setCustName(e.target.value)}
+                    placeholder="e.g. Michael Wong"
+                    className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-white focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">Phone Number (Optional)</label>
+                  <input
+                    type="tel"
+                    value={custPhone}
+                    onChange={(e) => setCustPhone(e.target.value)}
+                    placeholder="e.g. +60 12-345 6789"
+                    className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-white font-mono focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">Email Address (Optional)</label>
+                  <input
+                    type="email"
+                    value={custEmail}
+                    onChange={(e) => setCustEmail(e.target.value)}
+                    placeholder="e.g. michael@example.com"
+                    className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-white focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">Notes / Preferences (Optional)</label>
+                  <textarea
+                    rows={2}
+                    value={custNotes}
+                    onChange={(e) => setCustNotes(e.target.value)}
+                    placeholder="e.g. VIP regular, prefers oat milk..."
+                    className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-white focus:ring-2 focus:ring-amber-500 focus:outline-none text-xs"
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={custSaving || !custName.trim()}
+                  className="w-full py-2.5 bg-amber-500 hover:bg-amber-400 text-black font-bold text-sm rounded-xl transition shadow-md mt-2 disabled:opacity-50"
+                >
+                  {custSaving ? 'Saving Customer...' : 'Save Customer'}
+                </button>
+              </form>
+            </div>
+
+            {/* Customers Directory List */}
+            <div className="lg:col-span-8 bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-sm space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <h2 className="text-base font-bold text-white">Registered Customers ({customers.length})</h2>
+                <div className="relative w-full sm:w-64">
+                  <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5 pointer-events-none" />
+                  <input
+                    type="text"
+                    value={custSearch}
+                    onChange={(e) => setCustSearch(e.target.value)}
+                    placeholder="Search name or phone..."
+                    className="w-full pl-9 pr-3 py-1.5 bg-slate-800 border border-slate-700 rounded-xl text-white text-xs placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                  />
+                </div>
+              </div>
+
+              {customers.filter((c) => {
+                if (!custSearch.trim()) return true;
+                const term = custSearch.toLowerCase().trim();
+                return c.name?.toLowerCase().includes(term) || c.phone?.toLowerCase().includes(term) || c.email?.toLowerCase().includes(term);
+              }).length === 0 ? (
+                <div className="p-8 text-center text-slate-500 text-sm">
+                  {custSearch ? `No customers matching "${custSearch}"` : 'No customers registered yet. Add your first customer using the form on the left.'}
+                </div>
+              ) : (
+                <div className="divide-y divide-slate-800 border border-slate-800 rounded-xl overflow-hidden">
+                  {customers
+                    .filter((c) => {
+                      if (!custSearch.trim()) return true;
+                      const term = custSearch.toLowerCase().trim();
+                      return c.name?.toLowerCase().includes(term) || c.phone?.toLowerCase().includes(term) || c.email?.toLowerCase().includes(term);
+                    })
+                    .map((cust) => (
+                      <div key={cust._id} className="p-3.5 flex items-center justify-between bg-slate-850 hover:bg-slate-800 transition">
+                        <div className="flex items-center space-x-3 min-w-0">
+                          <div className="w-8 h-8 rounded-full bg-blue-500/20 text-blue-400 border border-blue-500/30 flex items-center justify-center font-bold text-xs shrink-0">
+                            {cust.name?.charAt(0)?.toUpperCase() || 'C'}
+                          </div>
+                          <div className="truncate">
+                            <div className="font-bold text-white text-sm truncate">{cust.name}</div>
+                            <div className="text-xs text-slate-400 flex items-center space-x-2">
+                              {cust.phone && <span className="font-mono">{cust.phone}</span>}
+                              {cust.phone && cust.email && <span>•</span>}
+                              {cust.email && <span className="truncate">{cust.email}</span>}
+                            </div>
+                            {cust.notes && (
+                              <div className="text-[11px] text-amber-300/80 italic mt-0.5 truncate">
+                                &ldquo;{cust.notes}&rdquo;
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                        <div className="text-right text-[11px] text-slate-500 shrink-0 ml-3">
+                          Added {new Date(cust.createdAt).toLocaleDateString()}
+                        </div>
+                      </div>
+                    ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ========================================================================= */}
+        {/* TAB 4: USERS & STAFF MANAGEMENT                                          */}
         {/* ========================================================================= */}
         {activeTab === 'users' && (
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
@@ -2208,6 +2398,29 @@ export default function AdminCatalogPage() {
                       type="email"
                       value={editCompEmail}
                       onChange={(e) => setEditCompEmail(e.target.value)}
+                      className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-white"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">Contact Phone</label>
+                    <input
+                      type="text"
+                      value={editCompPhone}
+                      onChange={(e) => setEditCompPhone(e.target.value)}
+                      className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-white"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">Address</label>
+                    <input
+                      type="text"
+                      value={editCompAddress}
+                      onChange={(e) => setEditCompAddress(e.target.value)}
+                      placeholder="e.g. 123 Main St, Suite 400"
                       className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-white"
                     />
                   </div>

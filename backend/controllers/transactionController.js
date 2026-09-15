@@ -1,5 +1,6 @@
 const Transaction = require('../models/Transaction');
 const User = require('../models/User');
+const Customer = require('../models/Customer');
 const { getNextTransactionId } = require('../utils/sequenceService');
 const { calculateCartFinancials } = require('../utils/discountEngine');
 const { broadcastUpdate } = require('../utils/sseBroadcaster');
@@ -29,7 +30,9 @@ exports.createTransaction = async (req, res, next) => {
       status = 'PAID', // 'PAID' or 'UNPAID_TAB'
       paymentMethod = 'CASH', // 'CASH', 'CARD', 'TAB_DEFERRED'
       staffMemberId,
-      tabType, // 'STAFF' or 'ROOM'
+      tabType, // 'CUSTOMER', 'ROOM', 'STAFF', 'NONE'
+      customerId,
+      customerName,
       roomNumber,
       guestName,
       notes
@@ -39,6 +42,21 @@ exports.createTransaction = async (req, res, next) => {
       await session.abortTransaction();
       session.endSession();
       return res.status(400).json({ success: false, message: 'Cart must contain at least one item' });
+    }
+
+    // Resolve Customer if attached
+    let resolvedCustomerId = null;
+    let resolvedCustomerName = null;
+
+    if (customerId) {
+      const cust = await Customer.findById(customerId);
+      if (cust) {
+        resolvedCustomerId = cust._id;
+        resolvedCustomerName = cust.name;
+      }
+    }
+    if (!resolvedCustomerName && customerName && customerName.trim()) {
+      resolvedCustomerName = customerName.trim();
     }
 
     // Resolve Staff Member if attached
@@ -55,9 +73,26 @@ exports.createTransaction = async (req, res, next) => {
 
     // Determine and validate tab type
     let resolvedTabType = 'NONE';
+    let resolvedRoomNumber = roomNumber ? roomNumber.toUpperCase().trim() : undefined;
+    let resolvedGuestName = guestName ? guestName.trim() : undefined;
+
     if (status === 'UNPAID_TAB') {
-      if (tabType === 'ROOM' || roomNumber) {
-        if (!roomNumber || !roomNumber.trim()) {
+      if (tabType === 'CUSTOMER' || (resolvedCustomerName && !resolvedRoomNumber && !resolvedStaffMemberId)) {
+        if (!resolvedCustomerName) {
+          await session.abortTransaction();
+          session.endSession();
+          return res.status(400).json({
+            success: false,
+            message: 'A customer name is required to hold a Customer Bill'
+          });
+        }
+        resolvedTabType = 'CUSTOMER';
+        resolvedRoomNumber = undefined;
+        resolvedGuestName = undefined;
+        resolvedStaffMemberId = null;
+        staffNameSnapshot = null;
+      } else if (tabType === 'ROOM' || resolvedRoomNumber) {
+        if (!resolvedRoomNumber || !resolvedRoomNumber.trim()) {
           await session.abortTransaction();
           session.endSession();
           return res.status(400).json({
@@ -66,20 +101,33 @@ exports.createTransaction = async (req, res, next) => {
           });
         }
         resolvedTabType = 'ROOM';
+        resolvedCustomerId = null;
+        resolvedCustomerName = null;
+        resolvedStaffMemberId = null;
+        staffNameSnapshot = null;
       } else {
         if (!resolvedStaffMemberId) {
           await session.abortTransaction();
           session.endSession();
           return res.status(400).json({
             success: false,
-            message: 'A staff member must be assigned to open an unpaid staff tab'
+            message: 'A customer, room, or staff member must be assigned to open an unpaid bill'
           });
         }
         resolvedTabType = 'STAFF';
+        resolvedCustomerId = null;
+        resolvedCustomerName = null;
+        resolvedRoomNumber = undefined;
+        resolvedGuestName = undefined;
       }
     } else {
-      if (roomNumber) resolvedTabType = 'ROOM';
-      else if (resolvedStaffMemberId) resolvedTabType = 'STAFF';
+      if (tabType === 'CUSTOMER' || (resolvedCustomerName && !resolvedRoomNumber && !resolvedStaffMemberId)) {
+        resolvedTabType = 'CUSTOMER';
+      } else if (tabType === 'ROOM' || resolvedRoomNumber) {
+        resolvedTabType = 'ROOM';
+      } else if (tabType === 'STAFF' || resolvedStaffMemberId) {
+        resolvedTabType = 'STAFF';
+      }
     }
 
     // Calculate deterministic integer financials
@@ -102,8 +150,10 @@ exports.createTransaction = async (req, res, next) => {
       tabType: resolvedTabType,
       staffMemberId: resolvedStaffMemberId,
       staffNameSnapshot,
-      roomNumber: roomNumber ? roomNumber.toUpperCase().trim() : undefined,
-      guestName: guestName ? guestName.trim() : undefined,
+      customerId: resolvedCustomerId,
+      customerName: resolvedCustomerName,
+      roomNumber: resolvedRoomNumber,
+      guestName: resolvedGuestName,
       items: financials.processedItems,
       subtotalInCents: financials.subtotalInCents,
       globalDiscountType: globalDiscount?.type || 'none',
@@ -136,6 +186,8 @@ exports.createTransaction = async (req, res, next) => {
       status: transaction.status,
       grandTotalInCents: transaction.grandTotalInCents,
       staffMemberId: transaction.staffMemberId,
+      customerId: transaction.customerId,
+      customerName: transaction.customerName,
       createdAt: transaction.createdAt
     });
 
@@ -158,6 +210,7 @@ exports.getLedger = async (req, res, next) => {
       status, // 'PAID', 'UNPAID_TAB', 'ALL'
       cashierId,
       staffMemberId,
+      customerId,
       search,
       page = 1,
       limit = 50
@@ -199,12 +252,19 @@ exports.getLedger = async (req, res, next) => {
       filter.staffMemberId = staffMemberId;
     }
 
+    if (customerId) {
+      filter.customerId = customerId;
+    }
+
     if (search && search.trim()) {
       const searchRegex = new RegExp(search.trim(), 'i');
       filter.$or = [
         { txnNumber: searchRegex },
         { staffNameSnapshot: searchRegex },
-        { cashierNameSnapshot: searchRegex }
+        { cashierNameSnapshot: searchRegex },
+        { customerName: searchRegex },
+        { guestName: searchRegex },
+        { roomNumber: searchRegex }
       ];
     }
 

@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Search, UserCheck, X, ChevronDown, Check, UserX } from 'lucide-react';
+import { Search, UserCheck, X, ChevronDown, Check, UserX, UserPlus } from 'lucide-react';
 
 export default function StaffSearchSelect({
   staffMembers = [],
@@ -233,10 +233,39 @@ export default function StaffSearchSelect({
             {!selectedStaff && <Check className="w-3.5 h-3.5 text-slate-400" />}
           </div>
 
-          {/* Filtered Staff List */}
+          {/* No staff match — offer "use as custom name" */}
           {filteredStaff.length === 0 ? (
-            <div className="px-3 py-4 text-center text-xs text-slate-400">
-              No staff members found matching <span className="text-white font-medium">"{searchQuery}"</span>
+            <div>
+              {searchQuery.trim() && (
+                <div
+                  onClick={() => {
+                    const customName = searchQuery.trim();
+                    onSelectStaff({ fullName: customName, employeeCode: 'GUEST', isCustom: true });
+                    setIsOpen(false);
+                    setHighlightedIndex(-1);
+                    setSearchQuery(`${customName} (GUEST)`);
+                  }}
+                  className="px-3 py-2.5 flex items-center justify-between cursor-pointer hover:bg-slate-800 transition text-xs select-none group"
+                >
+                  <div className="flex items-center space-x-2.5 min-w-0">
+                    <div className="w-6 h-6 rounded-full bg-blue-500/20 border border-blue-500/40 flex items-center justify-center text-[10px] font-bold text-blue-300 shrink-0">
+                      {searchQuery.trim().charAt(0).toUpperCase()}
+                    </div>
+                    <div className="truncate">
+                      <span className="font-semibold text-slate-200 group-hover:text-white">
+                        &quot;{searchQuery.trim()}&quot;
+                      </span>
+                      <span className="ml-1.5 text-[10px] text-blue-400/80 uppercase tracking-wider">
+                        use as guest name
+                      </span>
+                    </div>
+                  </div>
+                  <UserPlus className="w-3.5 h-3.5 text-blue-400 shrink-0 ml-2" />
+                </div>
+              )}
+              <div className="px-3 py-2 text-center text-[11px] text-slate-500 border-t border-slate-800/60">
+                No matching staff found
+              </div>
             </div>
           ) : (
             filteredStaff.map((staff, idx) => {

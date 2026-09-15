@@ -20,6 +20,7 @@ export default function PosPage() {
   const [products, setProducts] = useState([]);
   const [staffMembers, setStaffMembers] = useState([]);
   const [presetDiscounts, setPresetDiscounts] = useState([]);
+  const [customers, setCustomers] = useState([]);
   
   const [activeCategoryId, setActiveCategoryId] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
@@ -31,11 +32,12 @@ export default function PosPage() {
       try {
         setLoading(true);
 
-        const [catRes, prodRes, staffRes, discRes] = await Promise.all([
+        const [catRes, prodRes, staffRes, discRes, custRes] = await Promise.all([
           axiosSecure.get('/api/categories').catch(() => null),
           axiosSecure.get('/api/products').catch(() => null),
           axiosSecure.get('/api/staff').catch(() => null),
-          axiosSecure.get('/api/discounts/presets').catch(() => null)
+          axiosSecure.get('/api/discounts/presets').catch(() => null),
+          axiosSecure.get('/api/customers').catch(() => null)
         ]);
 
         if (catRes?.data?.success) {
@@ -58,6 +60,7 @@ export default function PosPage() {
 
         if (staffRes?.data?.success) setStaffMembers(staffRes.data.data);
         if (discRes?.data?.success) setPresetDiscounts(discRes.data.data);
+        if (custRes?.data?.success) setCustomers(custRes.data.data);
       } catch (err) {
         console.error('Failed to load POS data:', err);
       } finally {
@@ -67,6 +70,22 @@ export default function PosPage() {
 
     fetchData();
   }, [axiosSecure]);
+
+  const handleCreateCustomer = async ({ name, phone }) => {
+    try {
+      const res = await axiosSecure.post('/api/customers', { name, phone });
+      if (res.data?.success) {
+        setCustomers((prev) => {
+          const exists = prev.some((c) => c._id === res.data.data._id);
+          return exists ? prev : [res.data.data, ...prev];
+        });
+        return res.data.data;
+      }
+    } catch (err) {
+      console.error('Failed to create customer:', err);
+      throw err;
+    }
+  };
 
   // Real-time catalog filtering
   const filteredProducts = useMemo(() => {
@@ -91,7 +110,17 @@ export default function PosPage() {
   }, [products, activeCategoryId, searchTerm]);
 
   // Checkout API call
-  const handleCheckout = async ({ status, paymentMethod, staffMemberId, tabType, roomNumber, guestName, notes: customNotes }) => {
+  const handleCheckout = async ({ 
+    status, 
+    paymentMethod, 
+    customerId,
+    customerName,
+    staffMemberId, 
+    tabType, 
+    roomNumber, 
+    guestName, 
+    notes: customNotes 
+  }) => {
     const idempotencyKey = `pos_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
 
     const payload = {
@@ -108,8 +137,10 @@ export default function PosPage() {
       globalDiscount,
       status,
       paymentMethod,
+      customerId: customerId || null,
+      customerName: customerName || null,
       staffMemberId: staffMemberId || null,
-      tabType: tabType || (roomNumber ? 'ROOM' : (staffMemberId ? 'STAFF' : 'NONE')),
+      tabType: tabType || (roomNumber ? 'ROOM' : (customerName ? 'CUSTOMER' : (staffMemberId ? 'STAFF' : 'NONE'))),
       roomNumber: roomNumber || null,
       guestName: guestName || null,
       notes: customNotes !== undefined ? customNotes : notes
@@ -229,6 +260,8 @@ export default function PosPage() {
         {/* Right Column: Active Ticket & Checkout (Cart on the right) */}
         <div className="w-5/12 lg:w-5/12 xl:w-2/5 h-full overflow-hidden">
           <ActiveTicket
+            customers={customers}
+            onCreateCustomer={handleCreateCustomer}
             staffMembers={staffMembers}
             presetDiscounts={presetDiscounts}
             onCheckout={handleCheckout}

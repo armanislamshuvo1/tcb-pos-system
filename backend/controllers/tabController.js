@@ -8,7 +8,16 @@ const { broadcastUpdate } = require('../utils/sseBroadcaster');
 exports.getConsolidatedStaffTabs = async (req, res, next) => {
   try {
     const { staffId } = req.query;
-    const matchStage = { status: 'UNPAID_TAB' };
+    const matchStage = { 
+      status: 'UNPAID_TAB',
+      staffMemberId: { $ne: null, $exists: true },
+      tabType: { $nin: ['ROOM', 'CUSTOMER'] },
+      $or: [
+        { roomNumber: { $exists: false } },
+        { roomNumber: null },
+        { roomNumber: '' }
+      ]
+    };
     
     if (req.user && req.user.role !== 'system_admin' && req.user.companyId) {
       matchStage.companyId = new mongoose.Types.ObjectId(req.user.companyId);
@@ -90,7 +99,8 @@ exports.getStaffOpenTransactions = async (req, res, next) => {
 
     const query = {
       staffMemberId: staffId,
-      status: 'UNPAID_TAB'
+      status: 'UNPAID_TAB',
+      tabType: { $nin: ['ROOM', 'CUSTOMER'] }
     };
     if (req.user && req.user.role !== 'system_admin' && req.user.companyId) {
       query.companyId = req.user.companyId;
@@ -213,7 +223,16 @@ exports.settleTransactions = async (req, res, next) => {
 exports.getUnpaidTabsByProduct = async (req, res, next) => {
   try {
     const { search } = req.query;
-    const matchStage = { status: 'UNPAID_TAB' };
+    const matchStage = { 
+      status: 'UNPAID_TAB',
+      staffMemberId: { $ne: null, $exists: true },
+      tabType: { $nin: ['ROOM', 'CUSTOMER'] },
+      $or: [
+        { roomNumber: { $exists: false } },
+        { roomNumber: null },
+        { roomNumber: '' }
+      ]
+    };
 
     if (req.user?.companyId && req.user.role !== 'system_admin') {
       matchStage.$or = [
@@ -335,7 +354,8 @@ exports.getConsolidatedRoomTabs = async (req, res, next) => {
     const { roomNumber, search } = req.query;
     const matchStage = { 
       status: 'UNPAID_TAB', 
-      $or: [{ tabType: 'ROOM' }, { roomNumber: { $exists: true, $ne: null } }] 
+      roomNumber: { $type: 'string', $nin: ['', null] },
+      tabType: { $nin: ['STAFF', 'CUSTOMER'] }
     };
 
     if (req.user?.companyId && req.user.role !== 'system_admin') {
@@ -454,7 +474,8 @@ exports.getRoomOpenTransactions = async (req, res, next) => {
 
     const query = {
       roomNumber: roomNumber.toUpperCase().trim(),
-      status: 'UNPAID_TAB'
+      status: 'UNPAID_TAB',
+      tabType: { $nin: ['STAFF', 'CUSTOMER'] }
     };
 
     if (req.user?.companyId && req.user.role !== 'system_admin') {
@@ -478,6 +499,192 @@ exports.getRoomOpenTransactions = async (req, res, next) => {
       data: {
         roomNumber: roomNumber.toUpperCase(),
         guestName: guestName || '',
+        totalBalanceInCents,
+        transactionCount: openTransactions.length,
+        transactions: openTransactions
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Get consolidated unpaid customer bills/tabs
+// @route   GET /api/tabs/customers
+// @access  Authenticated
+exports.getConsolidatedCustomerTabs = async (req, res, next) => {
+  try {
+    const { search, customerName } = req.query;
+    const matchStage = {
+      status: 'UNPAID_TAB',
+      tabType: { $nin: ['ROOM', 'STAFF'] },
+      $and: [
+        {
+          $or: [
+            { roomNumber: { $exists: false } },
+            { roomNumber: null },
+            { roomNumber: '' }
+          ]
+        },
+        {
+          $or: [
+            { customerName: { $type: 'string', $nin: ['', null] } },
+            { customerId: { $ne: null, $exists: true } }
+          ]
+        }
+      ]
+    };
+
+    if (req.user?.companyId && req.user.role !== 'system_admin') {
+      matchStage.companyId = new mongoose.Types.ObjectId(req.user.companyId);
+    }
+
+    if (customerName) {
+      matchStage.customerName = customerName.trim();
+    }
+
+    const pipeline = [
+      { $match: matchStage },
+      { $unwind: '$items' }
+    ];
+
+    if (search && search.trim()) {
+      const term = search.trim();
+      pipeline.push({
+        $match: {
+          $or: [
+            { customerName: { $regex: term, $options: 'i' } },
+            { 'items.productNameSnapshot': { $regex: term, $options: 'i' } }
+          ]
+        }
+      });
+    }
+
+    pipeline.push(
+      // Group by Customer + Product
+      {
+        $group: {
+          _id: {
+            customerName: '$customerName',
+            customerId: '$customerId',
+            productId: '$items.productId',
+            productName: '$items.productNameSnapshot',
+            categoryName: '$items.categoryNameSnapshot',
+            unitPriceInCents: '$items.unitPriceInCents'
+          },
+          totalQuantity: { $sum: '$items.quantity' },
+          totalAmountInCents: { $sum: '$items.finalLineTotalInCents' },
+          totalDiscountInCents: { $sum: '$items.lineDiscountInCents' },
+          history: {
+            $push: {
+              transactionId: '$_id',
+              txnNumber: '$txnNumber',
+              quantity: '$items.quantity',
+              lineDiscountInCents: '$items.lineDiscountInCents',
+              takenAt: '$items.takenAt',
+              cashierName: '$cashierNameSnapshot',
+              notes: '$notes'
+            }
+          }
+        }
+      },
+      // Group by Customer
+      {
+        $group: {
+          _id: {
+            customerName: '$_id.customerName',
+            customerId: '$_id.customerId'
+          },
+          totalOwedInCents: { $sum: '$totalAmountInCents' },
+          itemCount: { $sum: '$totalQuantity' },
+          consolidatedItems: {
+            $push: {
+              productId: '$_id.productId',
+              productName: '$_id.productName',
+              categoryName: '$_id.categoryName',
+              unitPriceInCents: '$_id.unitPriceInCents',
+              totalQuantity: '$totalQuantity',
+              totalAmountInCents: '$totalAmountInCents',
+              totalDiscountInCents: '$totalDiscountInCents',
+              history: '$history'
+            }
+          }
+        }
+      },
+      // Project
+      {
+        $project: {
+          _id: 0,
+          customerName: '$_id.customerName',
+          customerId: '$_id.customerId',
+          totalOwedInCents: 1,
+          itemCount: 1,
+          consolidatedItems: 1
+        }
+      },
+      {
+        $sort: { totalOwedInCents: -1, customerName: 1 }
+      }
+    );
+
+    const customerTabs = await Transaction.aggregate(pipeline);
+
+    res.status(200).json({
+      success: true,
+      count: customerTabs.length,
+      data: customerTabs
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Get discrete open transactions for a customer
+// @route   GET /api/tabs/customers/:customerName/transactions
+// @access  Authenticated
+exports.getCustomerOpenTransactions = async (req, res, next) => {
+  try {
+    const { customerName } = req.params;
+    const { customerId } = req.query;
+
+    const query = {
+      status: 'UNPAID_TAB',
+      tabType: { $nin: ['ROOM', 'STAFF'] },
+      $or: [
+        { roomNumber: { $exists: false } },
+        { roomNumber: null },
+        { roomNumber: '' }
+      ]
+    };
+
+    if (req.user?.companyId && req.user.role !== 'system_admin') {
+      query.companyId = req.user.companyId;
+    }
+
+    const decodedCustomerName = decodeURIComponent(customerName).trim();
+    if (customerId && mongoose.Types.ObjectId.isValid(customerId)) {
+      query.$and = [
+        {
+          $or: [
+            { customerId: new mongoose.Types.ObjectId(customerId) },
+            { customerName: decodedCustomerName }
+          ]
+        }
+      ];
+    } else {
+      query.customerName = decodedCustomerName;
+    }
+
+    const openTransactions = await Transaction.find(query)
+      .sort({ createdAt: -1 })
+      .lean();
+
+    const totalBalanceInCents = openTransactions.reduce((acc, t) => acc + t.grandTotalInCents, 0);
+
+    res.status(200).json({
+      success: true,
+      data: {
+        customerName: decodeURIComponent(customerName).trim(),
         totalBalanceInCents,
         transactionCount: openTransactions.length,
         transactions: openTransactions

@@ -47,10 +47,10 @@ const transactionSchema = new mongoose.Schema({
   },
   cashierNameSnapshot: { type: String, required: true },
   
-  // Tab Assignment (Staff Tab vs. Customer Room Bill)
+  // Tab Assignment (Staff Tab vs. Customer Room Bill vs. Customer Bill)
   tabType: {
     type: String,
-    enum: ['STAFF', 'ROOM', 'NONE'],
+    enum: ['STAFF', 'ROOM', 'CUSTOMER', 'NONE'],
     default: 'NONE',
     index: true
   },
@@ -68,6 +68,17 @@ const transactionSchema = new mongoose.Schema({
   },
   guestName: { 
     type: String 
+  },
+
+  // Customer Bill / Customer Assignment
+  customerId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Customer',
+    index: true
+  },
+  customerName: {
+    type: String,
+    index: true
   },
 
   items: [lineItemSchema],
@@ -110,6 +121,8 @@ const transactionSchema = new mongoose.Schema({
 transactionSchema.index({ createdAt: -1, status: 1 });
 transactionSchema.index({ staffMemberId: 1, status: 1 });
 transactionSchema.index({ roomNumber: 1, status: 1 });
+transactionSchema.index({ customerId: 1, status: 1 });
+transactionSchema.index({ customerName: 1, status: 1 });
 transactionSchema.index({ createdAt: 1, cashierId: 1 });
 
 module.exports = mongoose.model('Transaction', transactionSchema);

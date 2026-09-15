@@ -163,7 +163,7 @@ export default function LedgerPage() {
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search TXN #, Cashier, or Staff name..."
+              placeholder="Search TXN #, Cashier, Customer, Room, or Staff name..."
               className="w-full pl-9 pr-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-white placeholder-slate-400 text-xs focus:ring-2 focus:ring-amber-500 focus:outline-none"
             />
           </div>
@@ -207,7 +207,7 @@ export default function LedgerPage() {
                 <th className="py-3 px-4 font-semibold">Status</th>
                 <th className="py-3 px-4 font-semibold">Timestamp</th>
                 <th className="py-3 px-4 font-semibold">Cashier</th>
-                <th className="py-3 px-4 font-semibold">Staff Assignment</th>
+                <th className="py-3 px-4 font-semibold">Customer / Assignment</th>
                 <th className="py-3 px-4 font-semibold">Items</th>
                 <th className="py-3 px-4 font-semibold text-right">Grand Total</th>
               </tr>
@@ -251,8 +251,28 @@ export default function LedgerPage() {
                         {txn.cashierNameSnapshot}
                       </td>
                       <td className="py-3.5 px-4 text-xs">
-                        {txn.staffNameSnapshot ? (
-                          <span className="text-amber-300 font-semibold">{txn.staffNameSnapshot}</span>
+                        {txn.customerName ? (
+                          <div className="flex items-center space-x-1.5 flex-wrap">
+                            <span className="text-blue-300 font-semibold">{txn.customerName}</span>
+                            <span className="text-[10px] text-blue-400/80 border border-blue-500/30 bg-blue-500/10 px-1.5 py-0.5 rounded-md font-medium">
+                              Customer
+                            </span>
+                          </div>
+                        ) : txn.roomNumber ? (
+                          <div className="flex items-center space-x-1.5 flex-wrap">
+                            <span className="text-amber-400 font-mono font-bold">{txn.roomNumber}</span>
+                            {txn.guestName && <span className="text-slate-400 text-[11px]">({txn.guestName})</span>}
+                            <span className="text-[10px] text-amber-400/80 border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 rounded-md font-medium">
+                              Room
+                            </span>
+                          </div>
+                        ) : txn.staffNameSnapshot ? (
+                          <div className="flex items-center space-x-1.5 flex-wrap">
+                            <span className="text-purple-300 font-semibold">{txn.staffNameSnapshot}</span>
+                            <span className="text-[10px] text-purple-400/80 border border-purple-500/30 bg-purple-500/10 px-1.5 py-0.5 rounded-md font-medium">
+                              Staff
+                            </span>
+                          </div>
                         ) : (
                           <span className="text-slate-500">Walk-in</span>
                         )}

@@ -14,6 +14,7 @@ const transactionRoutes = require('./routes/transactionRoutes');
 const tabRoutes = require('./routes/tabRoutes');
 const reportRoutes = require('./routes/reportRoutes');
 const companyRoutes = require('./routes/companyRoutes');
+const customerRoutes = require('./routes/customerRoutes');
 const runMigration = require('./scripts/migrateSystemAdmin');
 
 const helmet = require('helmet');
@@ -64,6 +65,7 @@ app.use('/api/transactions', transactionRoutes);
 app.use('/api/tabs', tabRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/companies', companyRoutes);
+app.use('/api/customers', customerRoutes);
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
