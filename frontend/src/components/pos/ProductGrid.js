@@ -23,6 +23,16 @@ export default function ProductGrid({ products, onAddToCart }) {
       {products.map((product) => {
         const priceFormatted = (product.priceInCents / 100).toFixed(2);
         const categoryColor = product.categoryId?.colorCode || '#3B82F6';
+        const hasDiscount = product.discountType && product.discountType !== 'none' && product.discountValue > 0;
+        let discountInCents = 0;
+        if (hasDiscount) {
+          if (product.discountType === 'percentage') {
+            discountInCents = Math.round((product.priceInCents * product.discountValue) / 100);
+          } else if (product.discountType === 'fixed_cents') {
+            discountInCents = Math.min(product.priceInCents, Math.round(product.discountValue));
+          }
+        }
+        const effectivePriceInCents = Math.max(0, product.priceInCents - discountInCents);
 
         return (
           <button
@@ -31,15 +41,22 @@ export default function ProductGrid({ products, onAddToCart }) {
             onClick={() => onAddToCart(product)}
             className="group relative flex flex-col justify-between p-3.5 bg-slate-800/80 hover:bg-slate-750 active:scale-[0.98] border border-slate-700/70 hover:border-amber-500/80 rounded-2xl text-left transition-all duration-150 shadow-sm hover:shadow-md cursor-pointer select-none"
           >
-            {/* Top Row: Category tag and SKU */}
+            {/* Top Row: Category tag, Discount badge and SKU */}
             <div className="flex items-center justify-between w-full mb-2">
-              <span
-                className="text-[10px] font-bold px-2 py-0.5 rounded-full text-white tracking-wider uppercase truncate max-w-[110px]"
-                style={{ backgroundColor: categoryColor }}
-              >
-                {product.categoryNameSnapshot || product.categoryId?.name || 'Item'}
-              </span>
-              <span className="text-[10px] font-mono text-slate-400">{product.sku}</span>
+              <div className="flex items-center space-x-1.5 truncate max-w-[140px]">
+                <span
+                  className="text-[10px] font-bold px-2 py-0.5 rounded-full text-white tracking-wider uppercase truncate"
+                  style={{ backgroundColor: categoryColor }}
+                >
+                  {product.categoryNameSnapshot || product.categoryId?.name || 'Item'}
+                </span>
+                {hasDiscount && (
+                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 shrink-0">
+                    {product.discountType === 'percentage' ? `${product.discountValue}% OFF` : `-${formatCurrency(product.discountValue, currency)}`}
+                  </span>
+                )}
+              </div>
+              <span className="text-[10px] font-mono text-slate-400 shrink-0">{product.sku}</span>
             </div>
 
             {/* Middle: Product Name */}
@@ -54,7 +71,7 @@ export default function ProductGrid({ products, onAddToCart }) {
               <span className="text-amber-400 font-extrabold text-base tracking-tight">
                 {formatCurrency(product.priceInCents, currency)}
               </span>
-              <div className="w-7 h-7 rounded-lg bg-amber-500/20 group-hover:bg-amber-500 text-amber-400 group-hover:text-black flex items-center justify-center transition-colors">
+              <div className="w-7 h-7 rounded-lg bg-amber-500/20 group-hover:bg-amber-500 text-amber-400 group-hover:text-black flex items-center justify-center transition-colors shrink-0">
                 <Plus className="w-4 h-4" />
               </div>
             </div>
