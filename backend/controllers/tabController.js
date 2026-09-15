@@ -197,3 +197,124 @@ exports.settleTransactions = async (req, res, next) => {
     next(error);
   }
 };
+
+// @desc    Get unpaid tabs grouped by product name with staff breakdown
+// @route   GET /api/tabs/by-product
+// @access  Authenticated
+exports.getUnpaidTabsByProduct = async (req, res, next) => {
+  try {
+    const { search } = req.query;
+    const matchStage = { status: 'UNPAID_TAB' };
+
+    if (req.user?.companyId && req.user.role !== 'system_admin') {
+      matchStage.$or = [
+        { companyId: new mongoose.Types.ObjectId(req.user.companyId) },
+        { companyId: null }
+      ];
+    }
+
+    const pipeline = [
+      { $match: matchStage },
+      { $unwind: '$items' }
+    ];
+
+    if (search && search.trim()) {
+      pipeline.push({
+        $match: {
+          'items.productNameSnapshot': {
+            $regex: search.trim(),
+            $options: 'i'
+          }
+        }
+      });
+    }
+
+    pipeline.push(
+      // Step 1: Group by Product Name + Staff Member
+      {
+        $group: {
+          _id: {
+            productName: '$items.productNameSnapshot',
+            staffMemberId: '$staffMemberId',
+            staffName: '$staffNameSnapshot'
+          },
+          productId: { $first: '$items.productId' },
+          sku: { $first: '$items.skuSnapshot' },
+          categoryName: { $first: '$items.categoryNameSnapshot' },
+          unitPriceInCents: { $last: '$items.unitPriceInCents' },
+          staffQuantity: { $sum: '$items.quantity' },
+          staffAmountInCents: { $sum: '$items.finalLineTotalInCents' },
+          staffDiscountInCents: { $sum: '$items.lineDiscountInCents' },
+          occurrences: {
+            $push: {
+              transactionId: '$_id',
+              txnNumber: '$txnNumber',
+              quantity: '$items.quantity',
+              unitPriceInCents: '$items.unitPriceInCents',
+              finalLineTotalInCents: '$items.finalLineTotalInCents',
+              lineDiscountInCents: '$items.lineDiscountInCents',
+              takenAt: '$items.takenAt',
+              cashierName: '$cashierNameSnapshot'
+            }
+          }
+        }
+      },
+      // Step 2: Group by Product Name
+      {
+        $group: {
+          _id: '$_id.productName',
+          productId: { $first: '$productId' },
+          sku: { $first: '$sku' },
+          categoryName: { $first: '$categoryName' },
+          unitPriceInCents: { $first: '$unitPriceInCents' },
+          totalUnpaidQuantity: { $sum: '$staffQuantity' },
+          totalUnpaidAmountInCents: { $sum: '$staffAmountInCents' },
+          totalDiscountInCents: { $sum: '$staffDiscountInCents' },
+          staffBreakdown: {
+            $push: {
+              staffMemberId: '$_id.staffMemberId',
+              staffName: '$_id.staffName',
+              quantity: '$staffQuantity',
+              totalAmountInCents: '$staffAmountInCents',
+              discountInCents: '$staffDiscountInCents',
+              occurrences: '$occurrences'
+            }
+          }
+        }
+      },
+      // Step 3: Project cleanly
+      {
+        $project: {
+          _id: 0,
+          productName: '$_id',
+          productId: 1,
+          sku: 1,
+          categoryName: 1,
+          unitPriceInCents: 1,
+          totalUnpaidQuantity: 1,
+          totalUnpaidAmountInCents: 1,
+          totalDiscountInCents: 1,
+          staffBreakdown: 1
+        }
+      },
+      // Step 4: Sort by highest unpaid quantity first, then alphabetically
+      {
+        $sort: {
+          totalUnpaidQuantity: -1,
+          productName: 1
+        }
+      }
+    );
+
+    const results = await Transaction.aggregate(pipeline);
+
+    res.status(200).json({
+      success: true,
+      count: results.length,
+      data: results
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
