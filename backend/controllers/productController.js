@@ -62,6 +62,8 @@ exports.createProduct = async (req, res, next) => {
       costInCents,
       taxRatePercent,
       stockQuantity,
+      discountType,
+      discountValue,
       companyId
     } = req.body;
 
@@ -94,6 +96,9 @@ exports.createProduct = async (req, res, next) => {
       });
     }
 
+    const validDiscountType = ['percentage', 'fixed_cents'].includes(discountType) ? discountType : 'none';
+    const validDiscountValue = validDiscountType === 'none' ? 0 : Math.max(0, Number(discountValue) || 0);
+
     const product = await Product.create({
       sku: sku.trim().toUpperCase(),
       name: name.trim(),
@@ -103,6 +108,8 @@ exports.createProduct = async (req, res, next) => {
       costInCents: Math.round(Number(costInCents) || 0),
       taxRatePercent: Number(taxRatePercent) || 0,
       stockQuantity: Number(stockQuantity) || 0,
+      discountType: validDiscountType,
+      discountValue: validDiscountValue,
       companyId: assignedCompanyId,
       isActive: true
     });
@@ -130,6 +137,8 @@ exports.updateProduct = async (req, res, next) => {
       costInCents,
       taxRatePercent,
       stockQuantity,
+      discountType,
+      discountValue,
       isActive
     } = req.body;
 
@@ -151,6 +160,15 @@ exports.updateProduct = async (req, res, next) => {
     if (costInCents !== undefined) product.costInCents = Math.round(Number(costInCents));
     if (taxRatePercent !== undefined) product.taxRatePercent = Number(taxRatePercent);
     if (stockQuantity !== undefined) product.stockQuantity = Number(stockQuantity);
+    if (discountType !== undefined) {
+      product.discountType = ['percentage', 'fixed_cents'].includes(discountType) ? discountType : 'none';
+      if (product.discountType === 'none') {
+        product.discountValue = 0;
+      }
+    }
+    if (discountValue !== undefined && product.discountType !== 'none') {
+      product.discountValue = Math.max(0, Number(discountValue) || 0);
+    }
     if (isActive !== undefined) product.isActive = Boolean(isActive);
 
     // If category is changing, update ref and snapshot
