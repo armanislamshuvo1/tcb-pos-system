@@ -69,6 +69,23 @@ const runMigration = async () => {
     const systemAdmins = await User.find({ role: 'system_admin' }).select('fullName employeeCode email role');
     console.log('[Migration] Active System Admins:', systemAdmins);
 
+    // 4. Drop legacy global unique indexes if present and sync multi-tenant compound indexes
+    try {
+      await Product.collection.dropIndex('sku_1').catch(() => {});
+      await User.collection.dropIndex('employeeCode_1').catch(() => {});
+      await Category.collection.dropIndex('slug_1').catch(() => {});
+      await Category.collection.dropIndex('name_1').catch(() => {});
+
+      await Promise.all([
+        Product.syncIndexes(),
+        User.syncIndexes(),
+        Category.syncIndexes()
+      ]);
+      console.log('[Migration] Synced multi-tenant compound indexes.');
+    } catch (idxErr) {
+      console.warn('[Migration] Index sync note:', idxErr.message);
+    }
+
     console.log('[Migration] Multi-tenant B2B migration completed successfully!');
     return { success: true, defaultCompany, systemAdmins };
   } catch (error) {

@@ -12,5 +12,6 @@ router.get('/', authenticateToken, requireRole('system_admin'), companyControlle
 router.post('/', authenticateToken, requireRole('system_admin'), companyController.createCompany);
 router.get('/:id', authenticateToken, requireRole('system_admin'), companyController.getCompanyById);
 router.put('/:id', authenticateToken, requireRole('system_admin'), companyController.updateCompany);
+router.post('/:id/admins', authenticateToken, requireRole('system_admin'), companyController.assignCompanyAdmin);
 
 module.exports = router;

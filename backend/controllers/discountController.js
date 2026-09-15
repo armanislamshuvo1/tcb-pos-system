@@ -5,7 +5,12 @@ const Discount = require('../models/Discount');
 // @access  Authenticated
 exports.getPresetDiscounts = async (req, res, next) => {
   try {
-    const discounts = await Discount.find({ isActive: true, isPresetButton: true })
+    const query = { isActive: true, isPresetButton: true };
+    if (req.user && req.user.role !== 'system_admin' && req.user.companyId) {
+      query.$or = [{ companyId: req.user.companyId }, { companyId: null }];
+    }
+
+    const discounts = await Discount.find(query)
       .sort({ displayOrder: 1, name: 1 })
       .lean();
 
@@ -23,7 +28,12 @@ exports.getPresetDiscounts = async (req, res, next) => {
 // @access  Admin Only
 exports.getAllDiscounts = async (req, res, next) => {
   try {
-    const discounts = await Discount.find()
+    const query = {};
+    if (req.user && req.user.role !== 'system_admin' && req.user.companyId) {
+      query.$or = [{ companyId: req.user.companyId }, { companyId: null }];
+    }
+
+    const discounts = await Discount.find(query)
       .sort({ displayOrder: 1, name: 1 })
       .lean();
 
@@ -41,7 +51,7 @@ exports.getAllDiscounts = async (req, res, next) => {
 // @access  Admin Only
 exports.createDiscount = async (req, res, next) => {
   try {
-    const { name, type, target, value, isPresetButton, displayOrder, productId } = req.body;
+    const { name, type, target, value, isPresetButton, displayOrder, productId, companyId } = req.body;
 
     if (!name || !type || !target || value === undefined) {
       return res.status(400).json({
@@ -62,6 +72,8 @@ exports.createDiscount = async (req, res, next) => {
       }
     }
 
+    const assignedCompanyId = req.user.role === 'system_admin' ? (companyId || null) : req.user.companyId;
+
     const discount = await Discount.create({
       name: name.trim(),
       type,
@@ -71,6 +83,7 @@ exports.createDiscount = async (req, res, next) => {
       value: Number(value),
       isPresetButton: Boolean(isPresetButton),
       displayOrder: Number(displayOrder) || 0,
+      companyId: assignedCompanyId,
       isActive: true
     });
 
@@ -94,6 +107,12 @@ exports.updateDiscount = async (req, res, next) => {
     const discount = await Discount.findById(id);
     if (!discount) {
       return res.status(404).json({ success: false, message: 'Discount not found' });
+    }
+
+    if (req.user.role !== 'system_admin') {
+      if (discount.companyId && req.user.companyId && discount.companyId.toString() !== req.user.companyId.toString()) {
+        return res.status(403).json({ success: false, message: 'Unauthorized to edit this company discount' });
+      }
     }
 
     if (name) discount.name = name.trim();
@@ -121,10 +140,19 @@ exports.updateDiscount = async (req, res, next) => {
 exports.deleteDiscount = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const discount = await Discount.findByIdAndDelete(id);
+    const discount = await Discount.findById(id);
     if (!discount) {
       return res.status(404).json({ success: false, message: 'Discount not found' });
     }
+
+    if (req.user.role !== 'system_admin') {
+      if (discount.companyId && req.user.companyId && discount.companyId.toString() !== req.user.companyId.toString()) {
+        return res.status(403).json({ success: false, message: 'Unauthorized to delete this company discount' });
+      }
+    }
+
+    await Discount.findByIdAndDelete(id);
+
     res.status(200).json({
       success: true,
       data: { message: 'Discount deleted successfully' }

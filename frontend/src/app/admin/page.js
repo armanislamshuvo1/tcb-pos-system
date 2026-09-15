@@ -70,6 +70,8 @@ export default function AdminCatalogPage() {
   const [userEmployeeCode, setUserEmployeeCode] = useState('');
   const [userRole, setUserRole] = useState('staff');
   const [userPassword, setUserPassword] = useState('password123');
+  const [userCompanyId, setUserCompanyId] = useState('');
+  const [userFilterCompany, setUserFilterCompany] = useState('ALL');
 
   // User Edit Modal State
   const [editingUser, setEditingUser] = useState(null);
@@ -78,6 +80,7 @@ export default function AdminCatalogPage() {
   const [editUserEmployeeCode, setEditUserEmployeeCode] = useState('');
   const [editUserRole, setEditUserRole] = useState('staff');
   const [editUserPinCode, setEditUserPinCode] = useState('');
+  const [editUserCompanyId, setEditUserCompanyId] = useState('');
   const [editUserIsActive, setEditUserIsActive] = useState(true);
 
   // Discount Form State
@@ -105,6 +108,20 @@ export default function AdminCatalogPage() {
   const [companyCurrencySymbol, setCompanyCurrencySymbol] = useState('RM');
   const [companyEmail, setCompanyEmail] = useState('');
   const [companyPhone, setCompanyPhone] = useState('');
+
+  // Initial Company Admin State (when provisioning company)
+  const [createAdminWithComp, setCreateAdminWithComp] = useState(true);
+  const [initAdminFullName, setInitAdminFullName] = useState('');
+  const [initAdminEmail, setInitAdminEmail] = useState('');
+  const [initAdminEmployeeCode, setInitAdminEmployeeCode] = useState('');
+  const [initAdminPin, setInitAdminPin] = useState('1234');
+
+  // Assign Admin Modal State
+  const [assigningAdminCompany, setAssigningAdminCompany] = useState(null);
+  const [newAdminFullName, setNewAdminFullName] = useState('');
+  const [newAdminEmail, setNewAdminEmail] = useState('');
+  const [newAdminEmployeeCode, setNewAdminEmployeeCode] = useState('');
+  const [newAdminPin, setNewAdminPin] = useState('1234');
 
   // Edit Company Modal State
   const [editCompName, setEditCompName] = useState('');
@@ -323,14 +340,20 @@ export default function AdminCatalogPage() {
     setMessage(null);
 
     try {
-      const res = await axiosSecure.post('/api/admin/create', {
+      const payload = {
         fullName: userFullName.trim(),
         email: userEmail.trim().toLowerCase(),
         employeeCode: userEmployeeCode.trim().toUpperCase(),
         role: userRole,
         password: userPassword,
         pinCode: userPassword
-      });
+      };
+
+      if (role === 'system_admin' && userCompanyId) {
+        payload.companyId = userCompanyId;
+      }
+
+      const res = await axiosSecure.post('/api/admin/create', payload);
 
       if (res.data?.success) {
         setMessage({ 
@@ -340,6 +363,7 @@ export default function AdminCatalogPage() {
         setUserFullName('');
         setUserEmail('');
         setUserEmployeeCode('');
+        setUserCompanyId('');
         fetchCatalogData();
       }
     } catch (err) {
@@ -353,6 +377,7 @@ export default function AdminCatalogPage() {
     setEditUserEmail(user.email || '');
     setEditUserEmployeeCode(user.employeeCode || '');
     setEditUserRole(user.role || 'staff');
+    setEditUserCompanyId(user.companyId?._id || user.companyId || '');
     setEditUserPinCode('');
     setEditUserIsActive(user.isActive !== false);
   };
@@ -369,6 +394,9 @@ export default function AdminCatalogPage() {
       };
       if (editUserPinCode.trim()) {
         payload.pinCode = editUserPinCode.trim();
+      }
+      if (role === 'system_admin') {
+        payload.companyId = editUserCompanyId || null;
       }
 
       const res = await axiosSecure.put(`/api/admin/users/${editingUser._id}`, payload);
@@ -427,7 +455,7 @@ export default function AdminCatalogPage() {
   const handleCreateCompany = async (e) => {
     e.preventDefault();
     try {
-      const res = await axiosSecure.post('/api/companies', {
+      const payload = {
         name: companyName.trim(),
         code: companyCode.trim().toUpperCase(),
         branding: {
@@ -441,20 +469,67 @@ export default function AdminCatalogPage() {
         },
         contactEmail: companyEmail.trim(),
         contactPhone: companyPhone.trim()
-      });
+      };
+
+      if (createAdminWithComp && initAdminEmail.trim() && initAdminFullName.trim()) {
+        payload.adminUser = {
+          fullName: initAdminFullName.trim(),
+          email: initAdminEmail.trim().toLowerCase(),
+          employeeCode: initAdminEmployeeCode.trim().toUpperCase() || `ADM-${companyCode.trim().toUpperCase()}`,
+          pinCode: initAdminPin.trim() || '1234',
+          password: initAdminPin.trim() || '1234'
+        };
+      }
+
+      const res = await axiosSecure.post('/api/companies', payload);
 
       if (res.data?.success) {
-        setMessage({ type: 'success', text: `Company "${companyName}" provisioned successfully!` });
+        const adminMsg = res.data.data?.initialAdmin
+          ? ` with Admin "${res.data.data.initialAdmin.fullName}" (${res.data.data.initialAdmin.email})`
+          : '';
+        setMessage({ type: 'success', text: `Company "${companyName}" provisioned successfully${adminMsg}!` });
         setCompanyName('');
         setCompanyCode('');
         setCompanyDisplayName('');
         setCompanyLogoText('');
         setCompanyEmail('');
         setCompanyPhone('');
+        setInitAdminFullName('');
+        setInitAdminEmail('');
+        setInitAdminEmployeeCode('');
+        setInitAdminPin('1234');
         fetchCompanies();
+        fetchCatalogData();
       }
     } catch (err) {
       setMessage({ type: 'error', text: err.response?.data?.message || 'Failed to create company' });
+    }
+  };
+
+  const handleAssignCompanyAdmin = async (e) => {
+    e.preventDefault();
+    if (!assigningAdminCompany) return;
+    try {
+      const res = await axiosSecure.post(`/api/companies/${assigningAdminCompany._id}/admins`, {
+        fullName: newAdminFullName.trim(),
+        email: newAdminEmail.trim().toLowerCase(),
+        employeeCode: newAdminEmployeeCode.trim().toUpperCase(),
+        pinCode: newAdminPin.trim() || '1234',
+        password: newAdminPin.trim() || '1234'
+      });
+
+      if (res.data?.success) {
+        setMessage({ type: 'success', text: `Admin "${newAdminFullName}" provisioned for ${assigningAdminCompany.name} successfully!` });
+        setAssigningAdminCompany(null);
+        setNewAdminFullName('');
+        setNewAdminEmail('');
+        setNewAdminEmployeeCode('');
+        setNewAdminPin('1234');
+        fetchCompanies();
+        fetchCatalogData();
+      }
+    } catch (err) {
+      setMessage({ type: 'error', text: err.response?.data?.message || 'Failed to assign company admin' });
     }
   };
 
@@ -935,12 +1010,25 @@ export default function AdminCatalogPage() {
               <div>
                 <h2 className="text-base font-bold text-white flex items-center space-x-2">
                   <UserPlus className="w-4 h-4 text-amber-400" />
-                  <span>Register User or Staff Member</span>
+                  <span>
+                    {role === 'system_admin' 
+                      ? 'Register User or Tenant Staff' 
+                      : `Register Staff for ${company?.branding?.displayName || company?.name || 'Company'}`}
+                  </span>
                 </h2>
                 <p className="text-xs text-slate-400 mt-1">
-                  Create staff members (who can hold tabs), cashiers, or administrators.
+                  {role === 'system_admin'
+                    ? 'Provision platform accounts, company admins, or staff tied to a B2B company.'
+                    : 'Create staff members (who can hold tabs) or cashiers under your company.'}
                 </p>
               </div>
+
+              {role === 'admin' && (
+                <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs flex items-center space-x-2">
+                  <Building2 className="w-4 h-4 shrink-0" />
+                  <span>Auto-linked to company: <strong>{company?.branding?.displayName || company?.name || 'My Company'}</strong></span>
+                </div>
+              )}
 
               <form onSubmit={handleCreateUser} className="space-y-3 text-sm">
                 <div>
@@ -952,12 +1040,37 @@ export default function AdminCatalogPage() {
                   >
                     <option value="staff">Staff Member (Opens Tabs at POS)</option>
                     <option value="cashier">Cashier (Operates POS Terminal)</option>
-                    <option value="admin">Administrator (Full Access)</option>
+                    <option value="admin">
+                      {role === 'system_admin' ? 'Company Administrator' : 'Company Admin (Co-Manager)'}
+                    </option>
                     {role === 'system_admin' && (
-                      <option value="system_admin">System Admin (B2B Multi-Tenant)</option>
+                      <option value="system_admin">System Admin (Platform Owner)</option>
                     )}
                   </select>
                 </div>
+
+                {role === 'system_admin' && (
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">
+                      Assign to B2B Company
+                    </label>
+                    <select
+                      value={userCompanyId}
+                      onChange={(e) => setUserCompanyId(e.target.value)}
+                      className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-white font-medium focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                    >
+                      <option value="">Platform Level / No Company</option>
+                      {companies.map((c) => (
+                        <option key={c._id} value={c._id}>
+                          {c.name} ({c.code})
+                        </option>
+                      ))}
+                    </select>
+                    <span className="text-[11px] text-slate-400 mt-1 block">
+                      Assign this user or admin to a specific B2B client company.
+                    </span>
+                  </div>
+                )}
 
                 <div>
                   <label className="block text-xs font-semibold text-slate-300 mb-1">Full Name *</label>
@@ -1015,7 +1128,7 @@ export default function AdminCatalogPage() {
 
                 <button
                   type="submit"
-                  className="w-full py-2.5 bg-amber-500 hover:bg-amber-400 text-black font-bold text-sm rounded-xl transition shadow-md mt-2"
+                  className="w-full py-2.5 bg-amber-500 hover:bg-amber-400 text-black font-bold text-sm rounded-xl transition shadow-md mt-2 cursor-pointer"
                 >
                   Register Account
                 </button>
@@ -1024,76 +1137,129 @@ export default function AdminCatalogPage() {
 
             {/* Users & Staff Directory Table */}
             <div className="lg:col-span-8 bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-sm overflow-x-auto">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-base font-bold text-white">Registered Users & Staff ({users.length})</h2>
-                <span className="text-xs text-slate-400">Staff members appear in the POS tab dropdown</span>
-              </div>
+              {(() => {
+                const displayedUsers = users.filter((u) => {
+                  if (role !== 'system_admin' || userFilterCompany === 'ALL') return true;
+                  if (userFilterCompany === 'NONE') return !u.companyId;
+                  return (u.companyId?._id || u.companyId) === userFilterCompany;
+                });
 
-              <table className="w-full text-left text-sm">
-                <thead>
-                  <tr className="border-b border-slate-800 text-xs text-slate-400 uppercase bg-slate-850/80">
-                    <th className="py-2.5 px-3 font-semibold">Employee</th>
-                    <th className="py-2.5 px-3 font-semibold">Role</th>
-                    <th className="py-2.5 px-3 font-semibold">Login ID</th>
-                    <th className="py-2.5 px-3 font-semibold">Terminal PIN</th>
-                    <th className="py-2.5 px-3 font-semibold">Status</th>
-                    <th className="py-2.5 px-3 font-semibold text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-800">
-                  {users.map((u) => (
-                    <tr key={u._id} className="hover:bg-slate-850/60 transition">
-                      <td className="py-3 px-3">
-                        <div className="font-bold text-white">{u.fullName}</div>
-                        <div className="text-xs text-slate-400">{u.email}</div>
-                      </td>
-                      <td className="py-3 px-3">
-                        <span className={`text-xs px-2.5 py-0.5 rounded-full font-bold border uppercase ${
-                          u.role === 'system_admin'
-                            ? 'bg-amber-950/90 text-amber-300 border-amber-500'
-                            : u.role === 'admin' 
-                            ? 'bg-purple-950/80 text-purple-400 border-purple-800'
-                            : u.role === 'cashier'
-                            ? 'bg-amber-950/80 text-amber-400 border-amber-800'
-                            : 'bg-blue-950/80 text-blue-400 border-blue-800'
-                        }`}>
-                          {u.role === 'system_admin' ? 'SYS ADMIN' : u.role}
+                return (
+                  <>
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+                      <div>
+                        <h2 className="text-base font-bold text-white">
+                          Registered Users & Staff ({displayedUsers.length})
+                        </h2>
+                        <span className="text-xs text-slate-400">
+                          {role === 'system_admin'
+                            ? 'System Admin platform view across all B2B tenant companies'
+                            : `Team directory for ${company?.branding?.displayName || company?.name || 'Company'}`}
                         </span>
-                      </td>
-                      <td className="py-3 px-3 font-mono font-bold text-amber-400 text-xs">
-                        {u.employeeCode}
-                      </td>
-                      <td className="py-3 px-3 font-mono text-xs text-slate-200">
-                        <span className="px-2 py-1 rounded bg-slate-800 border border-slate-700 font-bold text-amber-300">
-                          {u.pinCode || '••••'}
-                        </span>
-                      </td>
-                      <td className="py-3 px-3">
-                        {u.isActive !== false ? (
-                          <span className="text-xs px-2.5 py-0.5 rounded-full bg-emerald-950 text-emerald-400 border border-emerald-800 font-bold">
-                            ACTIVE
-                          </span>
-                        ) : (
-                          <span className="text-xs px-2.5 py-0.5 rounded-full bg-red-950 text-red-400 border border-red-800 font-bold">
-                            INACTIVE
-                          </span>
-                        )}
-                      </td>
-                      <td className="py-3 px-3 text-right">
-                        <button
-                          type="button"
-                          onClick={() => openEditUserModal(u)}
-                          className="p-1.5 bg-slate-800 hover:bg-slate-700 text-amber-400 rounded-lg transition inline-flex items-center space-x-1"
-                          title="Edit User Profile"
-                        >
-                          <Edit2 className="w-3.5 h-3.5" />
-                          <span className="text-xs font-semibold">Edit</span>
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                      </div>
+
+                      {role === 'system_admin' && (
+                        <div className="flex items-center space-x-2 shrink-0">
+                          <label className="text-xs text-slate-400 font-medium">Filter Company:</label>
+                          <select
+                            value={userFilterCompany}
+                            onChange={(e) => setUserFilterCompany(e.target.value)}
+                            className="px-2.5 py-1.5 bg-slate-800 border border-slate-700 rounded-xl text-white text-xs font-medium focus:ring-1 focus:ring-amber-500 focus:outline-none"
+                          >
+                            <option value="ALL">All Companies ({users.length})</option>
+                            <option value="NONE">Platform Only (No Company)</option>
+                            {companies.map((c) => (
+                              <option key={c._id} value={c._id}>
+                                {c.name} ({c.code})
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
+                    </div>
+
+                    <table className="w-full text-left text-sm">
+                      <thead>
+                        <tr className="border-b border-slate-800 text-xs text-slate-400 uppercase bg-slate-850/80">
+                          <th className="py-2.5 px-3 font-semibold">Employee</th>
+                          <th className="py-2.5 px-3 font-semibold">Role</th>
+                          {role === 'system_admin' && (
+                            <th className="py-2.5 px-3 font-semibold">Company</th>
+                          )}
+                          <th className="py-2.5 px-3 font-semibold">Login ID</th>
+                          <th className="py-2.5 px-3 font-semibold">Terminal PIN</th>
+                          <th className="py-2.5 px-3 font-semibold">Status</th>
+                          <th className="py-2.5 px-3 font-semibold text-right">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-800">
+                        {displayedUsers.map((u) => (
+                          <tr key={u._id} className="hover:bg-slate-850/60 transition">
+                            <td className="py-3 px-3">
+                              <div className="font-bold text-white">{u.fullName}</div>
+                              <div className="text-xs text-slate-400">{u.email}</div>
+                            </td>
+                            <td className="py-3 px-3">
+                              <span className={`text-xs px-2.5 py-0.5 rounded-full font-bold border uppercase ${
+                                u.role === 'system_admin'
+                                  ? 'bg-amber-950/90 text-amber-300 border-amber-500'
+                                  : u.role === 'admin' 
+                                  ? 'bg-purple-950/80 text-purple-400 border-purple-800'
+                                  : u.role === 'cashier'
+                                  ? 'bg-amber-950/80 text-amber-400 border-amber-800'
+                                  : 'bg-blue-950/80 text-blue-400 border-blue-800'
+                              }`}>
+                                {u.role === 'system_admin' ? 'SYS ADMIN' : u.role}
+                              </span>
+                            </td>
+                            {role === 'system_admin' && (
+                              <td className="py-3 px-3">
+                                {u.companyId ? (
+                                  <span className="text-xs font-bold text-amber-300 bg-amber-950/60 border border-amber-800/80 px-2 py-0.5 rounded-md inline-block">
+                                    {u.companyId.name || u.companyId.code || 'Assigned'}
+                                  </span>
+                                ) : (
+                                  <span className="text-xs text-slate-500 italic">Platform</span>
+                                )}
+                              </td>
+                            )}
+                            <td className="py-3 px-3 font-mono font-bold text-amber-400 text-xs">
+                              {u.employeeCode}
+                            </td>
+                            <td className="py-3 px-3 font-mono text-xs text-slate-200">
+                              <span className="px-2 py-1 rounded bg-slate-800 border border-slate-700 font-bold text-amber-300">
+                                {u.pinCode || '••••'}
+                              </span>
+                            </td>
+                            <td className="py-3 px-3">
+                              {u.isActive !== false ? (
+                                <span className="text-xs px-2.5 py-0.5 rounded-full bg-emerald-950 text-emerald-400 border border-emerald-800 font-bold">
+                                  ACTIVE
+                                </span>
+                              ) : (
+                                <span className="text-xs px-2.5 py-0.5 rounded-full bg-red-950 text-red-400 border border-red-800 font-bold">
+                                  INACTIVE
+                                </span>
+                              )}
+                            </td>
+                            <td className="py-3 px-3 text-right">
+                              <button
+                                type="button"
+                                onClick={() => openEditUserModal(u)}
+                                className="p-1.5 bg-slate-800 hover:bg-slate-700 text-amber-400 rounded-lg transition inline-flex items-center space-x-1 cursor-pointer"
+                                title="Edit User Profile"
+                              >
+                                <Edit2 className="w-3.5 h-3.5" />
+                                <span className="text-xs font-semibold">Edit</span>
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </>
+                );
+              })()}
             </div>
           </div>
         )}
@@ -1461,11 +1627,83 @@ export default function AdminCatalogPage() {
                   />
                 </div>
 
+                {/* Initial Company Admin Section */}
+                <div className="pt-3 border-t border-slate-800 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-2">
+                      <Crown className="w-4 h-4 text-amber-400" />
+                      <label htmlFor="createAdminWithComp" className="text-xs font-bold text-white cursor-pointer select-none">
+                        Assign Initial Company Admin
+                      </label>
+                    </div>
+                    <input
+                      type="checkbox"
+                      id="createAdminWithComp"
+                      checked={createAdminWithComp}
+                      onChange={(e) => setCreateAdminWithComp(e.target.checked)}
+                      className="w-4 h-4 accent-amber-500 rounded cursor-pointer"
+                    />
+                  </div>
+
+                  {createAdminWithComp && (
+                    <div className="p-3.5 bg-slate-850 rounded-xl border border-slate-800 space-y-2.5">
+                      <div>
+                        <label className="block text-[11px] font-semibold text-slate-300 mb-0.5">Admin Full Name *</label>
+                        <input
+                          type="text"
+                          required={createAdminWithComp}
+                          value={initAdminFullName}
+                          onChange={(e) => setInitAdminFullName(e.target.value)}
+                          placeholder="e.g. Johnathan Lee"
+                          className="w-full px-2.5 py-1.5 bg-slate-800 border border-slate-700 rounded-lg text-white text-xs focus:ring-1 focus:ring-amber-500 focus:outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-semibold text-slate-300 mb-0.5">Admin Email *</label>
+                        <input
+                          type="email"
+                          required={createAdminWithComp}
+                          value={initAdminEmail}
+                          onChange={(e) => setInitAdminEmail(e.target.value)}
+                          placeholder="admin@client.com"
+                          className="w-full px-2.5 py-1.5 bg-slate-800 border border-slate-700 rounded-lg text-white text-xs focus:ring-1 focus:ring-amber-500 focus:outline-none"
+                        />
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="block text-[11px] font-semibold text-slate-300 mb-0.5">Admin Code</label>
+                          <input
+                            type="text"
+                            value={initAdminEmployeeCode}
+                            onChange={(e) => setInitAdminEmployeeCode(e.target.value)}
+                            placeholder={companyCode ? `ADM-${companyCode.toUpperCase()}` : 'ADM-CODE'}
+                            className="w-full px-2.5 py-1.5 bg-slate-800 border border-slate-700 rounded-lg text-white font-mono uppercase text-xs focus:ring-1 focus:ring-amber-500 focus:outline-none"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[11px] font-semibold text-slate-300 mb-0.5">Terminal PIN</label>
+                          <input
+                            type="text"
+                            maxLength="6"
+                            value={initAdminPin}
+                            onChange={(e) => setInitAdminPin(e.target.value)}
+                            placeholder="1234"
+                            className="w-full px-2.5 py-1.5 bg-slate-800 border border-slate-700 rounded-lg text-white font-mono text-center text-xs tracking-widest focus:ring-1 focus:ring-amber-500 focus:outline-none"
+                          />
+                        </div>
+                      </div>
+                      <span className="text-[10px] text-slate-400 block">
+                        This admin can log in and manage staff, products, and terminals under this company.
+                      </span>
+                    </div>
+                  )}
+                </div>
+
                 <button
                   type="submit"
                   className="w-full py-2.5 bg-amber-500 hover:bg-amber-400 text-black font-bold text-sm rounded-xl transition shadow-md mt-2 cursor-pointer"
                 >
-                  Provision Company
+                  Provision Company & Admin
                 </button>
               </form>
             </div>
@@ -1484,7 +1722,7 @@ export default function AdminCatalogPage() {
 
               <div className="space-y-3">
                 {companies.map((comp) => (
-                  <div key={comp._id} className="p-4 bg-slate-850 rounded-xl border border-slate-800 flex items-center justify-between hover:bg-slate-800/80 transition">
+                  <div key={comp._id} className="p-4 bg-slate-850 rounded-xl border border-slate-800 flex flex-col md:flex-row md:items-center md:justify-between gap-3 hover:bg-slate-800/80 transition">
                     <div className="flex items-center space-x-3.5">
                       <div
                         className="w-10 h-10 rounded-xl flex items-center justify-center text-black font-black text-sm shadow-md shrink-0"
@@ -1498,22 +1736,53 @@ export default function AdminCatalogPage() {
                           <span className="font-mono text-xs text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">
                             {comp.code}
                           </span>
+                          {comp.isActive === false && (
+                            <span className="text-[10px] bg-red-950 text-red-400 border border-red-800 px-1.5 py-0.5 rounded font-bold">INACTIVE</span>
+                          )}
                         </div>
                         <div className="text-xs text-slate-400 mt-0.5">
-                          {comp.name} • Currency: <strong className="text-slate-300 font-mono">{comp.currency?.symbol || 'RM'} ({comp.currency?.code || 'MYR'})</strong> • Users: {comp.userCount || 0}
+                          {comp.name} • Currency: <strong className="text-slate-300 font-mono">{comp.currency?.symbol || 'RM'} ({comp.currency?.code || 'MYR'})</strong> • Total Users: {comp.userCount || 0}
+                        </div>
+                        <div className="text-xs text-slate-300 mt-1.5 flex flex-wrap items-center gap-1.5">
+                          <span className="text-slate-400">Company Admin(s):</span>
+                          {comp.admins && comp.admins.length > 0 ? (
+                            comp.admins.map((adm) => (
+                              <span key={adm._id} className="inline-flex items-center space-x-1 bg-amber-500/10 text-amber-300 border border-amber-500/20 px-2 py-0.5 rounded text-[11px] font-medium">
+                                <Crown className="w-2.5 h-2.5" />
+                                <span>{adm.fullName} ({adm.employeeCode})</span>
+                              </span>
+                            ))
+                          ) : (
+                            <span className="text-red-400 text-[11px] italic font-semibold">No Admin Assigned</span>
+                          )}
                         </div>
                       </div>
                     </div>
 
-                    <div className="flex items-center space-x-2">
+                    <div className="flex items-center space-x-2 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAssigningAdminCompany(comp);
+                          setNewAdminFullName('');
+                          setNewAdminEmail('');
+                          setNewAdminEmployeeCode(`ADM-${comp.code}`);
+                          setNewAdminPin('1234');
+                        }}
+                        className="p-2 bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 text-amber-300 rounded-lg transition inline-flex items-center space-x-1.5 cursor-pointer text-xs font-semibold"
+                        title="Assign or Provision Admin"
+                      >
+                        <UserPlus className="w-3.5 h-3.5" />
+                        <span>+ Assign Admin</span>
+                      </button>
                       <button
                         type="button"
                         onClick={() => openEditCompanyModal(comp)}
-                        className="p-2 bg-slate-800 hover:bg-slate-700 text-amber-400 rounded-lg transition inline-flex items-center space-x-1.5 cursor-pointer"
-                        title="Edit Company"
+                        className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded-lg transition inline-flex items-center space-x-1.5 cursor-pointer text-xs font-semibold"
+                        title="Edit Company Branding"
                       >
                         <Edit2 className="w-3.5 h-3.5" />
-                        <span className="text-xs font-semibold">Edit Branding</span>
+                        <span>Edit</span>
                       </button>
                     </div>
                   </div>
@@ -1778,6 +2047,24 @@ export default function AdminCatalogPage() {
                     </select>
                   </div>
 
+                  {role === 'system_admin' && (
+                    <div className="col-span-2">
+                      <label className="block text-xs font-semibold text-slate-300 mb-1">Company Assignment</label>
+                      <select
+                        value={editUserCompanyId}
+                        onChange={(e) => setEditUserCompanyId(e.target.value)}
+                        className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-white text-xs focus:ring-2 focus:ring-amber-500"
+                      >
+                        <option value="">Platform Level / No Company</option>
+                        {companies.map((c) => (
+                          <option key={c._id} value={c._id}>
+                            {c.name} ({c.code})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+
                   <div>
                     <label className="block text-xs font-semibold text-slate-300 mb-1">Status</label>
                     <select
@@ -1961,6 +2248,101 @@ export default function AdminCatalogPage() {
                     className="px-5 py-2 bg-amber-500 hover:bg-amber-400 text-black font-bold text-xs rounded-xl shadow-md transition"
                   >
                     Save Company
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* ========================================================================= */}
+        {/* ASSIGN / PROVISION COMPANY ADMIN MODAL (System Admin)                     */}
+        {/* ========================================================================= */}
+        {assigningAdminCompany && (
+          <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl animate-in fade-in zoom-in-95">
+              <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                <h3 className="text-lg font-bold text-white flex items-center space-x-2">
+                  <Crown className="w-4 h-4 text-amber-400" />
+                  <span>Assign Admin for {assigningAdminCompany.name}</span>
+                </h3>
+                <button
+                  onClick={() => setAssigningAdminCompany(null)}
+                  className="text-slate-400 hover:text-white p-1 rounded-lg cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <p className="text-xs text-slate-400">
+                Provision a new administrator for <strong>{assigningAdminCompany.name}</strong> ({assigningAdminCompany.code}). This admin can log in and manage company staff, cashiers, and products.
+              </p>
+
+              <form onSubmit={handleAssignCompanyAdmin} className="space-y-3 text-sm">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">Admin Full Name *</label>
+                  <input
+                    type="text"
+                    required
+                    value={newAdminFullName}
+                    onChange={(e) => setNewAdminFullName(e.target.value)}
+                    placeholder="e.g. Jane Doe"
+                    className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-white focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">Email Address *</label>
+                  <input
+                    type="email"
+                    required
+                    value={newAdminEmail}
+                    onChange={(e) => setNewAdminEmail(e.target.value)}
+                    placeholder="jane@client.com"
+                    className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-white focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">Employee ID *</label>
+                    <input
+                      type="text"
+                      required
+                      value={newAdminEmployeeCode}
+                      onChange={(e) => setNewAdminEmployeeCode(e.target.value)}
+                      placeholder={`ADM-${assigningAdminCompany.code}`}
+                      className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-white font-mono uppercase focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">Terminal PIN (4-6 Digits) *</label>
+                    <input
+                      type="text"
+                      maxLength="6"
+                      required
+                      value={newAdminPin}
+                      onChange={(e) => setNewAdminPin(e.target.value)}
+                      placeholder="1234"
+                      className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-white font-mono text-center tracking-widest focus:ring-2 focus:ring-amber-500 focus:outline-none text-base"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-end space-x-2 pt-2 border-t border-slate-800">
+                  <button
+                    type="button"
+                    onClick={() => setAssigningAdminCompany(null)}
+                    className="px-4 py-2 text-xs text-slate-400 hover:text-white cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-5 py-2 bg-amber-500 hover:bg-amber-400 text-black font-bold text-xs rounded-xl shadow-md transition cursor-pointer"
+                  >
+                    Provision Admin
                   </button>
                 </div>
               </form>

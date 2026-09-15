@@ -9,6 +9,11 @@ exports.getProducts = async (req, res, next) => {
     const { categoryId, search, activeOnly = 'true' } = req.query;
     const query = {};
 
+    // Multi-tenant scoping: Non-system admins only see their company's products (or shared null companyId)
+    if (req.user && req.user.role !== 'system_admin' && req.user.companyId) {
+      query.$or = [{ companyId: req.user.companyId }, { companyId: null }];
+    }
+
     if (activeOnly === 'true') {
       query.isActive = true;
     }
@@ -19,10 +24,14 @@ exports.getProducts = async (req, res, next) => {
 
     if (search && search.trim()) {
       const searchRegex = new RegExp(search.trim(), 'i');
-      query.$or = [
-        { name: searchRegex },
-        { sku: searchRegex },
-        { categoryNameSnapshot: searchRegex }
+      query.$and = [
+        {
+          $or: [
+            { name: searchRegex },
+            { sku: searchRegex },
+            { categoryNameSnapshot: searchRegex }
+          ]
+        }
       ];
     }
 
@@ -52,7 +61,8 @@ exports.createProduct = async (req, res, next) => {
       priceInCents,
       costInCents,
       taxRatePercent,
-      stockQuantity
+      stockQuantity,
+      companyId
     } = req.body;
 
     if (!sku || !name || !categoryId || priceInCents === undefined) {
@@ -71,11 +81,16 @@ exports.createProduct = async (req, res, next) => {
       });
     }
 
-    const existingSku = await Product.findOne({ sku: sku.trim().toUpperCase() });
+    const assignedCompanyId = req.user.role === 'system_admin' ? (companyId || null) : req.user.companyId;
+
+    const existingSku = await Product.findOne({ 
+      companyId: assignedCompanyId, 
+      sku: sku.trim().toUpperCase() 
+    });
     if (existingSku) {
       return res.status(400).json({
         success: false,
-        message: 'A product with this SKU already exists'
+        message: 'A product with this SKU already exists in this company'
       });
     }
 
@@ -88,6 +103,7 @@ exports.createProduct = async (req, res, next) => {
       costInCents: Math.round(Number(costInCents) || 0),
       taxRatePercent: Number(taxRatePercent) || 0,
       stockQuantity: Number(stockQuantity) || 0,
+      companyId: assignedCompanyId,
       isActive: true
     });
 
@@ -120,6 +136,13 @@ exports.updateProduct = async (req, res, next) => {
     const product = await Product.findById(id);
     if (!product) {
       return res.status(404).json({ success: false, message: 'Product not found' });
+    }
+
+    // Tenant check: Non-system admins cannot modify products outside their company
+    if (req.user.role !== 'system_admin') {
+      if (product.companyId && req.user.companyId && product.companyId.toString() !== req.user.companyId.toString()) {
+        return res.status(403).json({ success: false, message: 'Unauthorized to edit this company product' });
+      }
     }
 
     if (sku) product.sku = sku.trim().toUpperCase();
@@ -157,11 +180,19 @@ exports.updateProduct = async (req, res, next) => {
 exports.deleteProduct = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const product = await Product.findByIdAndDelete(id);
+    const product = await Product.findById(id);
     
     if (!product) {
       return res.status(404).json({ success: false, message: 'Product not found' });
     }
+
+    if (req.user.role !== 'system_admin') {
+      if (product.companyId && req.user.companyId && product.companyId.toString() !== req.user.companyId.toString()) {
+        return res.status(403).json({ success: false, message: 'Unauthorized to delete this company product' });
+      }
+    }
+
+    await Product.findByIdAndDelete(id);
 
     res.status(200).json({
       success: true,

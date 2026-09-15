@@ -4,13 +4,11 @@ const categorySchema = new mongoose.Schema({
   name: { 
     type: String, 
     required: [true, 'Category name is required'], 
-    unique: true, 
     trim: true 
   },
   slug: { 
     type: String, 
     required: true, 
-    unique: true, 
     lowercase: true, 
     trim: true 
   },
@@ -33,6 +31,7 @@ const categorySchema = new mongoose.Schema({
   }
 }, { timestamps: true });
 
+categorySchema.index({ companyId: 1, slug: 1 }, { unique: true });
 categorySchema.index({ displayOrder: 1, isActive: 1 });
 
 module.exports = mongoose.model('Category', categorySchema);

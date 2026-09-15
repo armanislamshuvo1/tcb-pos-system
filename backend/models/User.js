@@ -23,8 +23,8 @@ const userSchema = new mongoose.Schema({
   employeeCode: { 
     type: String, 
     required: [true, 'Employee code is required'], 
-    unique: true, 
     uppercase: true, 
+    trim: true,
     index: true 
   },
   role: { 
@@ -50,6 +50,7 @@ const userSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 userSchema.index({ role: 1, isActive: 1 });
+userSchema.index({ companyId: 1, employeeCode: 1 }, { unique: true });
 
 // Pre-save hook: Hash PIN code using bcrypt if modified
 userSchema.pre('save', async function () {

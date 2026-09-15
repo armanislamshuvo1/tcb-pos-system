@@ -10,7 +10,7 @@ exports.getActiveStaff = async (req, res, next) => {
   try {
     const query = { isActive: true };
     if (req.user.companyId && req.user.role !== 'system_admin') {
-      query.$or = [{ companyId: req.user.companyId }, { companyId: null }];
+      query.companyId = req.user.companyId;
     }
 
     const staff = await User.find(query)
@@ -75,15 +75,34 @@ exports.createUser = async (req, res, next) => {
       });
     }
 
+    const isSystemAdmin = req.user.role === 'system_admin';
+
+    // Role check: non-system admins cannot provision system_admin
     const assignedRole = role || 'cashier';
-    if (assignedRole === 'system_admin' && req.user.role !== 'system_admin') {
+    if (assignedRole === 'system_admin' && !isSystemAdmin) {
       return res.status(403).json({
         success: false,
         message: 'Only system admins can provision other system admins'
       });
     }
 
-    const assignedPin = (pinCode && pinCode.trim()) ? pinCode.trim() : '1234';
+    // Company scoping:
+    // System admin can assign any companyId (or null for platform users)
+    // Company admin (role === 'admin') is strictly locked to req.user.companyId
+    let assignedCompanyId = null;
+    if (isSystemAdmin) {
+      assignedCompanyId = companyId || null;
+    } else {
+      if (!req.user.companyId) {
+        return res.status(403).json({
+          success: false,
+          message: 'Your admin account is not linked to any company. Cannot provision staff.'
+        });
+      }
+      assignedCompanyId = req.user.companyId;
+    }
+
+    const assignedPin = (pinCode && pinCode.trim()) ? pinCode.trim() : (password || '1234');
     let firebaseUid = `local_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
 
     // If Firebase Admin is initialized and password is provided, create Firebase user
@@ -99,14 +118,9 @@ exports.createUser = async (req, res, next) => {
         // Set custom claims for role
         await admin.auth().setCustomUserClaims(firebaseUid, { role: assignedRole });
       } catch (fbErr) {
-        return res.status(400).json({
-          success: false,
-          message: `Firebase Auth error: ${fbErr.message}`
-        });
+        // Fall back to local user if Firebase fails
       }
     }
-
-    const assignedCompanyId = companyId || req.user.companyId || null;
 
     // Create MongoDB User record
     const user = await User.create({
@@ -124,6 +138,7 @@ exports.createUser = async (req, res, next) => {
       success: true,
       data: {
         id: user._id,
+        _id: user._id,
         email: user.email,
         fullName: user.fullName,
         employeeCode: user.employeeCode,
@@ -135,7 +150,7 @@ exports.createUser = async (req, res, next) => {
     if (error.code === 11000) {
       return res.status(400).json({
         success: false,
-        message: 'A user with this email or employee code already exists'
+        message: 'A user with this email or employee code already exists in this company'
       });
     }
     next(error);
@@ -154,14 +169,26 @@ exports.updateUser = async (req, res, next) => {
       return res.status(404).json({ success: false, message: 'User not found' });
     }
 
+    const isSystemAdmin = req.user.role === 'system_admin';
+
+    // Tenant boundary check: Company Admins cannot edit users outside their company
+    if (!isSystemAdmin) {
+      if (!user.companyId || !req.user.companyId || user.companyId.toString() !== req.user.companyId.toString()) {
+        return res.status(403).json({
+          success: false,
+          message: 'You can only manage users within your own company'
+        });
+      }
+    }
+
     // Security check: Only system_admin can assign or modify system_admin
-    if (role === 'system_admin' && req.user.role !== 'system_admin') {
+    if (role === 'system_admin' && !isSystemAdmin) {
       return res.status(403).json({
         success: false,
         message: 'Only system admins can assign the system_admin role'
       });
     }
-    if (user.role === 'system_admin' && req.user.role !== 'system_admin') {
+    if (user.role === 'system_admin' && !isSystemAdmin) {
       return res.status(403).json({
         success: false,
         message: 'Only system admins can modify system admin accounts'
@@ -173,7 +200,11 @@ exports.updateUser = async (req, res, next) => {
     if (employeeCode) user.employeeCode = employeeCode.trim().toUpperCase();
     if (role) user.role = role;
     if (isActive !== undefined) user.isActive = Boolean(isActive);
-    if (companyId !== undefined) user.companyId = companyId || null;
+
+    // Only system admin can reassign company
+    if (isSystemAdmin && companyId !== undefined) {
+      user.companyId = companyId || null;
+    }
 
     if (pinCode && pinCode.trim()) {
       user.pinCode = pinCode.trim(); // Pre-save hook will hash
@@ -197,7 +228,7 @@ exports.updateUser = async (req, res, next) => {
     if (error.code === 11000) {
       return res.status(400).json({
         success: false,
-        message: 'A user with this email or employee code already exists'
+        message: 'A user with this email or employee code already exists in this company'
       });
     }
     next(error);
@@ -210,9 +241,15 @@ exports.updateUser = async (req, res, next) => {
 exports.getAllUsers = async (req, res, next) => {
   try {
     const query = {};
-    // Tenant admins only see users belonging to their company or unassigned
-    if (req.user.companyId && req.user.role !== 'system_admin') {
-      query.$or = [{ companyId: req.user.companyId }, { companyId: null }];
+    if (req.user.role === 'system_admin') {
+      if (req.query.companyId) {
+        query.companyId = req.query.companyId;
+      }
+    } else {
+      if (!req.user.companyId) {
+        return res.status(200).json({ success: true, data: [] });
+      }
+      query.companyId = req.user.companyId;
     }
 
     const users = await User.find(query)

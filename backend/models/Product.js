@@ -4,7 +4,6 @@ const productSchema = new mongoose.Schema({
   sku: { 
     type: String, 
     required: [true, 'SKU is required'], 
-    unique: true, 
     uppercase: true, 
     trim: true 
   },
@@ -53,7 +52,7 @@ const productSchema = new mongoose.Schema({
   }
 }, { timestamps: true });
 
-// Text search index for instant POS catalog search
+productSchema.index({ companyId: 1, sku: 1 }, { unique: true });
 productSchema.index({ name: 'text', sku: 'text', categoryNameSnapshot: 'text' });
 productSchema.index({ categoryId: 1, isActive: 1 });
 

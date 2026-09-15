@@ -179,7 +179,7 @@ const seedData = async () => {
     ]);
     console.log(`[Seed] Created ${discounts.length} preset discounts.`);
 
-    // 4. Create Default System Admin User
+    // 4. Create Default System Admin, Cashier, and Staff Users
     const adminUser = await User.create({
       email: 'arman@tcbpos.com',
       fullName: 'Arman',
@@ -190,6 +190,28 @@ const seedData = async () => {
       isActive: true
     });
     console.log(`[Seed] Created Default System Admin User: ${adminUser.email} (${adminUser.employeeCode})`);
+
+    const cashierUser = await User.create({
+      email: 'cashier@tcbpos.com',
+      fullName: 'Sarah Cashier',
+      employeeCode: 'CSH-001',
+      role: 'cashier',
+      companyId: defaultCompany._id,
+      pinCode: '1234',
+      isActive: true
+    });
+    console.log(`[Seed] Created Default Cashier User: ${cashierUser.email} (${cashierUser.employeeCode})`);
+
+    const staffUser = await User.create({
+      email: 'staff@tcbpos.com',
+      fullName: 'John Staff',
+      employeeCode: 'STF-001',
+      role: 'staff',
+      companyId: defaultCompany._id,
+      pinCode: '1234',
+      isActive: true
+    });
+    console.log(`[Seed] Created Default Staff Member: ${staffUser.email} (${staffUser.employeeCode})`);
 
     console.log('[Seed] Database seeding completed successfully!');
     process.exit(0);
