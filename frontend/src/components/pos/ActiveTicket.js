@@ -2,6 +2,8 @@
 
 import React, { useState } from 'react';
 import { useCartStore } from '../../store/useCartStore';
+import { useAuth } from '../../context/AuthContext';
+import { formatCurrency } from '../../utils/currency';
 import { 
   Trash2, 
   Minus, 
@@ -13,8 +15,11 @@ import {
   Clock, 
   CheckCircle2, 
   X,
-  AlertCircle
+  AlertCircle,
+  FileText,
+  Receipt
 } from 'lucide-react';
+import StaffSearchSelect from './StaffSearchSelect';
 
 export default function ActiveTicket({ staffMembers, presetDiscounts, onCheckout }) {
   const { 
@@ -27,12 +32,20 @@ export default function ActiveTicket({ staffMembers, presetDiscounts, onCheckout
     setGlobalDiscount, 
     globalDiscount,
     clearCart, 
-    getTotals 
+    getTotals,
+    notes,
+    setNotes
   } = useCartStore();
 
+  const { currency } = useAuth();
+
   const [selectedLineDiscountId, setSelectedLineDiscountId] = useState(null);
-  const [lineDiscountPercent, setLineDiscountPercent] = useState('10');
+  const [manualDiscountType, setManualDiscountType] = useState('percentage'); // 'percentage' | 'fixed_cents'
+  const [manualDiscountValue, setManualDiscountValue] = useState('10');
+  
   const [checkoutLoading, setCheckoutLoading] = useState(false);
+  const [pendingCheckout, setPendingCheckout] = useState(null); // { status, paymentMethod }
+  const [checkoutNotes, setCheckoutNotes] = useState('');
   const [successReceipt, setSuccessReceipt] = useState(null);
   const [errorMessage, setErrorMessage] = useState('');
 
@@ -58,14 +71,19 @@ export default function ActiveTicket({ staffMembers, presetDiscounts, onCheckout
   };
 
   const handleApplyManualLineDiscount = (productId) => {
-    const val = Number(lineDiscountPercent);
+    const val = Number(manualDiscountValue);
     if (!isNaN(val) && val >= 0) {
-      setLineDiscount(productId, 'percentage', val);
+      if (manualDiscountType === 'fixed_cents') {
+        setLineDiscount(productId, 'fixed_cents', Math.round(val * 100));
+      } else {
+        setLineDiscount(productId, 'percentage', val);
+      }
       setSelectedLineDiscountId(null);
     }
   };
 
-  const executeCheckout = async (status, paymentMethod) => {
+  // Open the Checkout Confirmation Modal
+  const initiateCheckout = (status, paymentMethod) => {
     if (items.length === 0) {
       setErrorMessage('Cart is empty. Add products before checking out.');
       return;
@@ -77,23 +95,37 @@ export default function ActiveTicket({ staffMembers, presetDiscounts, onCheckout
     }
 
     setErrorMessage('');
+    setCheckoutNotes(notes || '');
+    setPendingCheckout({ status, paymentMethod });
+  };
+
+  // Final confirmation execution
+  const confirmAndExecuteCheckout = async () => {
+    if (!pendingCheckout) return;
+
+    setErrorMessage('');
     setCheckoutLoading(true);
 
     try {
       const result = await onCheckout({
-        status,
-        paymentMethod,
-        staffMemberId: staffMember?._id || null
+        status: pendingCheckout.status,
+        paymentMethod: pendingCheckout.paymentMethod,
+        staffMemberId: staffMember?._id || null,
+        notes: checkoutNotes.trim()
       });
 
       if (result?.success) {
         setSuccessReceipt(result.data);
         clearCart();
+        setPendingCheckout(null);
+        setNotes('');
       } else {
         setErrorMessage(result?.message || 'Checkout failed');
+        setPendingCheckout(null);
       }
     } catch (err) {
       setErrorMessage(err.message || 'Error processing transaction');
+      setPendingCheckout(null);
     } finally {
       setCheckoutLoading(false);
     }
@@ -102,7 +134,7 @@ export default function ActiveTicket({ staffMembers, presetDiscounts, onCheckout
   return (
     <div className="flex flex-col h-full bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
       {/* Top Header: Staff Assignment */}
-      <div className="p-4 bg-slate-850 border-b border-slate-800">
+      <div className="p-4 bg-slate-850 border-b border-slate-800 relative z-30">
         <div className="flex items-center justify-between mb-2">
           <span className="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center space-x-1.5">
             <UserCheck className="w-4 h-4 text-amber-400" />
@@ -110,34 +142,26 @@ export default function ActiveTicket({ staffMembers, presetDiscounts, onCheckout
           </span>
           {staffMember && (
             <button
+              type="button"
               onClick={() => setStaffMember(null)}
-              className="text-xs text-red-400 hover:text-red-300 transition"
+              className="text-xs text-red-400 hover:text-red-300 transition cursor-pointer"
             >
               Detach Staff
             </button>
           )}
         </div>
 
-        {/* Staff Dropdown */}
-        <select
-          value={staffMember?._id || ''}
-          onChange={(e) => {
-            const found = staffMembers.find((s) => s._id === e.target.value);
-            setStaffMember(found || null);
-          }}
-          className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-white text-sm focus:ring-2 focus:ring-amber-500 focus:outline-none transition"
-        >
-          <option value="">-- No Staff Attached (Cash/Card Walk-in) --</option>
-          {staffMembers.map((staff) => (
-            <option key={staff._id} value={staff._id}>
-              {staff.fullName} ({staff.employeeCode})
-            </option>
-          ))}
-        </select>
+        {/* Searchable Staff Selection */}
+        <StaffSearchSelect
+          staffMembers={staffMembers}
+          selectedStaff={staffMember}
+          onSelectStaff={setStaffMember}
+          placeholder="Search staff name or code..."
+        />
 
         {staffMember && (
-          <div className="mt-2 text-[11px] text-amber-400/90 font-medium bg-amber-500/10 px-2.5 py-1 rounded-lg border border-amber-500/20">
-            Tab active for: <strong>{staffMember.fullName}</strong>
+          <div className="mt-2 text-[11px] text-amber-400/90 font-medium bg-amber-500/10 px-2.5 py-1.5 rounded-lg border border-amber-500/20 flex items-center justify-between">
+            <span>Tab active for: <strong>{staffMember.fullName}</strong> ({staffMember.employeeCode})</span>
           </div>
         )}
       </div>
@@ -152,8 +176,8 @@ export default function ActiveTicket({ staffMembers, presetDiscounts, onCheckout
           </div>
         ) : (
           items.map((item) => {
-            const unitPrice = (item.unitPriceInCents / 100).toFixed(2);
-            const lineTotal = (item.finalLineTotalInCents / 100).toFixed(2);
+            const unitPriceFormatted = formatCurrency(item.unitPriceInCents, currency);
+            const lineTotalFormatted = formatCurrency(item.finalLineTotalInCents, currency);
             const hasDiscount = item.lineDiscountInCents > 0;
 
             return (
@@ -163,18 +187,18 @@ export default function ActiveTicket({ staffMembers, presetDiscounts, onCheckout
                     <div className="text-sm font-semibold text-white leading-snug">
                       {item.productNameSnapshot}
                     </div>
-                    <div className="text-xs text-slate-400 mt-0.5">
-                      ${unitPrice} ea
+                    <div className="text-xs text-slate-400 mt-0.5 flex items-center flex-wrap gap-1.5">
+                      <span>{unitPriceFormatted} ea</span>
                       {hasDiscount && (
-                        <span className="text-emerald-400 font-medium ml-2">
-                          (-${(item.lineDiscountInCents / 100).toFixed(2)})
+                        <span className="text-emerald-400 font-medium">
+                          (-{formatCurrency(item.lineDiscountInCents, currency)})
                         </span>
                       )}
                     </div>
                   </div>
 
                   <div className="text-right">
-                    <span className="text-sm font-bold text-white">${lineTotal}</span>
+                    <span className="text-sm font-bold text-white">{lineTotalFormatted}</span>
                   </div>
                 </div>
 
@@ -184,7 +208,7 @@ export default function ActiveTicket({ staffMembers, presetDiscounts, onCheckout
                     <button
                       type="button"
                       onClick={() => updateQuantity(item.productId, -1)}
-                      className="w-7 h-7 flex items-center justify-center rounded-md bg-slate-700/80 hover:bg-slate-600 text-slate-200 active:scale-95"
+                      className="w-7 h-7 flex items-center justify-center rounded-md bg-slate-700/80 hover:bg-slate-600 text-slate-200 active:scale-95 cursor-pointer"
                     >
                       <Minus className="w-3.5 h-3.5" />
                     </button>
@@ -192,7 +216,7 @@ export default function ActiveTicket({ staffMembers, presetDiscounts, onCheckout
                     <button
                       type="button"
                       onClick={() => updateQuantity(item.productId, 1)}
-                      className="w-7 h-7 flex items-center justify-center rounded-md bg-slate-700/80 hover:bg-slate-600 text-slate-200 active:scale-95"
+                      className="w-7 h-7 flex items-center justify-center rounded-md bg-slate-700/80 hover:bg-slate-600 text-slate-200 active:scale-95 cursor-pointer"
                     >
                       <Plus className="w-3.5 h-3.5" />
                     </button>
@@ -202,59 +226,111 @@ export default function ActiveTicket({ staffMembers, presetDiscounts, onCheckout
                     {/* Line discount button */}
                     <button
                       type="button"
-                      onClick={() => setSelectedLineDiscountId(
-                        selectedLineDiscountId === item.productId ? null : item.productId
-                      )}
-                      className={`text-xs px-2 py-1 rounded-md border flex items-center space-x-1 transition ${
+                      onClick={() => {
+                        if (selectedLineDiscountId === item.productId) {
+                          setSelectedLineDiscountId(null);
+                        } else {
+                          setSelectedLineDiscountId(item.productId);
+                          if (item.lineDiscountType === 'fixed_cents') {
+                            setManualDiscountType('fixed_cents');
+                            setManualDiscountValue((item.lineDiscountValue / 100).toString());
+                          } else {
+                            setManualDiscountType('percentage');
+                            setManualDiscountValue(item.lineDiscountValue ? item.lineDiscountValue.toString() : '10');
+                          }
+                        }
+                      }}
+                      className={`text-xs px-2.5 py-1 rounded-md border flex items-center space-x-1 transition cursor-pointer ${
                         hasDiscount
-                          ? 'bg-emerald-950/80 border-emerald-700 text-emerald-400'
+                          ? 'bg-emerald-950/80 border-emerald-700 text-emerald-400 font-bold'
                           : 'bg-slate-800 border-slate-700 text-slate-300 hover:text-white'
                       }`}
                     >
                       <Tag className="w-3 h-3" />
-                      <span>{hasDiscount ? `${item.lineDiscountValue}%` : 'Disc'}</span>
+                      <span>
+                        {hasDiscount 
+                          ? (item.lineDiscountType === 'fixed_cents' 
+                              ? `-${formatCurrency(item.lineDiscountValue, currency)}` 
+                              : `-${item.lineDiscountValue}%`)
+                          : 'Disc'}
+                      </span>
                     </button>
 
                     {/* Delete Item */}
                     <button
                       type="button"
                       onClick={() => removeItem(item.productId)}
-                      className="text-slate-500 hover:text-red-400 p-1 rounded-md transition"
+                      className="text-slate-500 hover:text-red-400 p-1 rounded-md transition cursor-pointer"
+                      title="Remove item"
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>
                   </div>
                 </div>
 
-                {/* Popover Manual Line Discount Editor */}
+                {/* Popover Manual Line Discount Editor with Amount / % Toggle */}
                 {selectedLineDiscountId === item.productId && (
-                  <div className="mt-2 p-2.5 bg-slate-800 rounded-xl border border-slate-700 flex items-center space-x-2">
-                    <span className="text-xs text-slate-300">Discount %:</span>
-                    <input
-                      type="number"
-                      min="0"
-                      max="100"
-                      value={lineDiscountPercent}
-                      onChange={(e) => setLineDiscountPercent(e.target.value)}
-                      className="w-16 px-2 py-1 bg-slate-900 border border-slate-600 rounded text-xs text-white text-center"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => handleApplyManualLineDiscount(item.productId)}
-                      className="px-2.5 py-1 bg-amber-500 hover:bg-amber-400 text-black font-semibold text-xs rounded transition"
-                    >
-                      Apply
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setLineDiscount(item.productId, 'none', 0);
-                        setSelectedLineDiscountId(null);
-                      }}
-                      className="text-xs text-slate-400 hover:text-red-400 px-1"
-                    >
-                      Reset
-                    </button>
+                  <div className="mt-2 p-3 bg-slate-800/95 rounded-xl border border-slate-700 space-y-2 animate-in fade-in duration-100">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-slate-300 font-semibold">Custom Item Discount</span>
+                      {/* Discount Unit Switch */}
+                      <div className="flex rounded-lg overflow-hidden border border-slate-700 bg-slate-900 p-0.5">
+                        <button
+                          type="button"
+                          onClick={() => setManualDiscountType('percentage')}
+                          className={`px-2 py-0.5 rounded text-[11px] font-bold transition cursor-pointer ${
+                            manualDiscountType === 'percentage'
+                              ? 'bg-amber-500 text-black'
+                              : 'text-slate-400 hover:text-white'
+                          }`}
+                        >
+                          %
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setManualDiscountType('fixed_cents')}
+                          className={`px-2 py-0.5 rounded text-[11px] font-bold transition cursor-pointer ${
+                            manualDiscountType === 'fixed_cents'
+                              ? 'bg-amber-500 text-black'
+                              : 'text-slate-400 hover:text-white'
+                          }`}
+                        >
+                          {currency?.symbol || 'RM'}
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center space-x-2">
+                      <div className="relative flex-1">
+                        <input
+                          type="number"
+                          step={manualDiscountType === 'fixed_cents' ? '0.01' : '1'}
+                          min="0"
+                          max={manualDiscountType === 'percentage' ? '100' : undefined}
+                          value={manualDiscountValue}
+                          onChange={(e) => setManualDiscountValue(e.target.value)}
+                          placeholder={manualDiscountType === 'fixed_cents' ? 'e.g. 2.00' : 'e.g. 10'}
+                          className="w-full px-3 py-1.5 bg-slate-900 border border-slate-700 rounded-lg text-xs text-white focus:outline-none focus:ring-1 focus:ring-amber-500"
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleApplyManualLineDiscount(item.productId)}
+                        className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-black font-bold text-xs rounded-lg transition cursor-pointer"
+                      >
+                        Apply
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setLineDiscount(item.productId, 'none', 0);
+                          setSelectedLineDiscountId(null);
+                        }}
+                        className="text-xs text-slate-400 hover:text-red-400 px-1 cursor-pointer"
+                      >
+                        Reset
+                      </button>
+                    </div>
                   </div>
                 )}
               </div>
@@ -266,12 +342,13 @@ export default function ActiveTicket({ staffMembers, presetDiscounts, onCheckout
       {/* Preset 1-Click Discounts */}
       {presetDiscounts && presetDiscounts.length > 0 && items.length > 0 && (
         <div className="px-4 py-2.5 bg-slate-850 border-t border-slate-800">
-          <div className="text-[10px] uppercase font-bold text-slate-400 mb-1.5 flex items-center justify-between">
-            <span>1-Click Preset Discounts</span>
-            {globalDiscount.type !== 'none' && (
+          <div className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1.5 flex items-center justify-between">
+            <span>Quick Discounts</span>
+            {globalDiscount?.value > 0 && (
               <button
+                type="button"
                 onClick={() => setGlobalDiscount('none', 0)}
-                className="text-[10px] text-amber-400 hover:underline"
+                className="text-[10px] text-red-400 hover:text-red-300 cursor-pointer"
               >
                 Clear Global
               </button>
@@ -283,7 +360,7 @@ export default function ActiveTicket({ staffMembers, presetDiscounts, onCheckout
                 key={preset._id}
                 type="button"
                 onClick={() => handleApplyPreset(preset)}
-                className="px-2 py-1 bg-slate-800 hover:bg-slate-750 border border-slate-700 rounded-lg text-xs font-semibold text-slate-200 active:scale-95 transition"
+                className="px-2.5 py-1 bg-slate-800 hover:bg-slate-750 border border-slate-700 rounded-lg text-xs font-semibold text-slate-200 active:scale-95 transition cursor-pointer"
               >
                 {preset.name}
               </button>
@@ -304,28 +381,28 @@ export default function ActiveTicket({ staffMembers, presetDiscounts, onCheckout
       <div className="p-4 bg-slate-850 border-t border-slate-800 space-y-1.5 text-sm">
         <div className="flex justify-between text-slate-400">
           <span>Subtotal ({totals.itemCount} items)</span>
-          <span>${(totals.rawSubtotalInCents / 100).toFixed(2)}</span>
+          <span>{formatCurrency(totals.rawSubtotalInCents, currency)}</span>
         </div>
         {totals.totalDiscountInCents > 0 && (
           <div className="flex justify-between text-emerald-400 font-medium">
             <span>Discounts Applied</span>
-            <span>-${(totals.totalDiscountInCents / 100).toFixed(2)}</span>
+            <span>-{formatCurrency(totals.totalDiscountInCents, currency)}</span>
           </div>
         )}
         <div className="flex justify-between text-white font-extrabold text-lg pt-1 border-t border-slate-700/60">
           <span>TOTAL DUE</span>
-          <span className="text-amber-400">${(totals.grandTotalInCents / 100).toFixed(2)}</span>
+          <span className="text-amber-400">{formatCurrency(totals.grandTotalInCents, currency)}</span>
         </div>
       </div>
 
-      {/* Action Buttons */}
+      {/* Action Buttons Triggering Confirmation Modal */}
       <div className="p-4 bg-slate-900 border-t border-slate-800 grid grid-cols-2 gap-2">
         {/* Hold Tab Button (Full Width if Staff Attached) */}
         <button
           type="button"
           disabled={checkoutLoading || items.length === 0}
-          onClick={() => executeCheckout('UNPAID_TAB', 'TAB_DEFERRED')}
-          className={`col-span-2 py-3 px-4 rounded-xl font-bold text-sm flex items-center justify-center space-x-2 transition shadow-lg ${
+          onClick={() => initiateCheckout('UNPAID_TAB', 'TAB_DEFERRED')}
+          className={`col-span-2 py-3 px-4 rounded-xl font-bold text-sm flex items-center justify-center space-x-2 transition shadow-lg cursor-pointer ${
             staffMember
               ? 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white shadow-blue-500/20 active:scale-[0.99]'
               : 'bg-slate-800 text-slate-500 cursor-not-allowed border border-slate-700'
@@ -339,8 +416,8 @@ export default function ActiveTicket({ staffMembers, presetDiscounts, onCheckout
         <button
           type="button"
           disabled={checkoutLoading || items.length === 0}
-          onClick={() => executeCheckout('PAID', 'CASH')}
-          className="py-3 px-4 rounded-xl font-extrabold text-sm bg-emerald-600 hover:bg-emerald-500 active:scale-[0.99] text-white flex items-center justify-center space-x-1.5 shadow-lg shadow-emerald-600/20 disabled:opacity-50 transition"
+          onClick={() => initiateCheckout('PAID', 'CASH')}
+          className="py-3 px-4 rounded-xl font-extrabold text-sm bg-emerald-600 hover:bg-emerald-500 active:scale-[0.99] text-white flex items-center justify-center space-x-1.5 shadow-lg shadow-emerald-600/20 disabled:opacity-50 transition cursor-pointer"
         >
           <DollarSign className="w-4 h-4" />
           <span>CASH</span>
@@ -350,17 +427,116 @@ export default function ActiveTicket({ staffMembers, presetDiscounts, onCheckout
         <button
           type="button"
           disabled={checkoutLoading || items.length === 0}
-          onClick={() => executeCheckout('PAID', 'CARD')}
-          className="py-3 px-4 rounded-xl font-extrabold text-sm bg-amber-500 hover:bg-amber-400 active:scale-[0.99] text-black flex items-center justify-center space-x-1.5 shadow-lg shadow-amber-500/20 disabled:opacity-50 transition"
+          onClick={() => initiateCheckout('PAID', 'CARD')}
+          className="py-3 px-4 rounded-xl font-extrabold text-sm bg-amber-500 hover:bg-amber-400 active:scale-[0.99] text-black flex items-center justify-center space-x-1.5 shadow-lg shadow-amber-500/20 disabled:opacity-50 transition cursor-pointer"
         >
           <CreditCard className="w-4 h-4" />
           <span>CARD</span>
         </button>
       </div>
 
+      {/* Checkout Confirmation Modal with Cashier Notes */}
+      {pendingCheckout && (
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150">
+          <div className="bg-slate-900 border border-slate-700 rounded-2xl max-w-md w-full p-5 sm:p-6 space-y-4 shadow-2xl animate-in zoom-in-95">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+              <div className="flex items-center space-x-2.5">
+                <div className="w-9 h-9 rounded-xl bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-amber-400">
+                  <Receipt className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-white">Confirm Transaction</h3>
+                  <p className="text-xs text-slate-400">Review checkout details and add notes</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPendingCheckout(null)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Payment & Order Summary Card */}
+            <div className="p-3.5 bg-slate-850 rounded-xl border border-slate-800 space-y-2 text-xs">
+              <div className="flex justify-between items-center">
+                <span className="text-slate-400">Settlement Action:</span>
+                <span className={`font-bold px-2 py-0.5 rounded text-[11px] ${
+                  pendingCheckout.status === 'UNPAID_TAB'
+                    ? 'bg-blue-950 text-blue-300 border border-blue-800'
+                    : pendingCheckout.paymentMethod === 'CASH'
+                    ? 'bg-emerald-950 text-emerald-300 border border-emerald-800'
+                    : 'bg-amber-950 text-amber-300 border border-amber-800'
+                }`}>
+                  {pendingCheckout.status === 'UNPAID_TAB'
+                    ? `Staff Tab (${staffMember?.fullName || 'Assigned'})`
+                    : `${pendingCheckout.paymentMethod} Payment`}
+                </span>
+              </div>
+
+              {staffMember && (
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-400">Attached Staff:</span>
+                  <span className="font-semibold text-amber-300">{staffMember.fullName} ({staffMember.employeeCode})</span>
+                </div>
+              )}
+
+              <div className="flex justify-between items-center">
+                <span className="text-slate-400">Line Items:</span>
+                <span className="font-semibold text-white">{totals.itemCount} items</span>
+              </div>
+
+              <div className="flex justify-between items-center pt-2 border-t border-slate-700/80 text-sm">
+                <span className="font-bold text-white">Grand Total Due:</span>
+                <span className="font-black text-amber-400 text-base">
+                  {formatCurrency(totals.grandTotalInCents, currency)}
+                </span>
+              </div>
+            </div>
+
+            {/* Cashier Notes Input */}
+            <div>
+              <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1.5 flex items-center space-x-1.5">
+                <FileText className="w-3.5 h-3.5 text-amber-400" />
+                <span>Cashier Notes / Order Instructions (Optional)</span>
+              </label>
+              <textarea
+                value={checkoutNotes}
+                onChange={(e) => setCheckoutNotes(e.target.value)}
+                rows={2}
+                placeholder="e.g. Table 4, takeaway, extra hot, customer promo note..."
+                className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-white text-xs sm:text-sm placeholder-slate-500 focus:ring-2 focus:ring-amber-500 focus:outline-none"
+              />
+            </div>
+
+            {/* Action Buttons */}
+            <div className="grid grid-cols-2 gap-2.5 pt-1">
+              <button
+                type="button"
+                disabled={checkoutLoading}
+                onClick={() => setPendingCheckout(null)}
+                className="py-2.5 px-4 rounded-xl border border-slate-700 bg-slate-800 hover:bg-slate-750 text-slate-300 font-bold text-xs sm:text-sm transition cursor-pointer"
+              >
+                Cancel / Back
+              </button>
+              <button
+                type="button"
+                disabled={checkoutLoading}
+                onClick={confirmAndExecuteCheckout}
+                className="py-2.5 px-4 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-extrabold text-xs sm:text-sm transition shadow-lg shadow-amber-500/20 active:scale-95 cursor-pointer flex items-center justify-center space-x-1.5"
+              >
+                {checkoutLoading ? 'Processing...' : `Confirm & Settle`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Success Modal / Receipt */}
       {successReceipt && (
-        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-sm w-full p-6 text-center space-y-4 shadow-2xl animate-in fade-in zoom-in-95">
             <div className="w-14 h-14 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center mx-auto">
               <CheckCircle2 className="w-8 h-8" />
@@ -386,16 +562,22 @@ export default function ActiveTicket({ staffMembers, presetDiscounts, onCheckout
                   <span className="font-semibold text-white">{successReceipt.staffNameSnapshot}</span>
                 </div>
               )}
+              {successReceipt.notes && (
+                <div className="flex justify-between text-left">
+                  <span>Notes:</span>
+                  <span className="font-medium text-amber-300/90 italic truncate max-w-[180px]">{successReceipt.notes}</span>
+                </div>
+              )}
               <div className="flex justify-between font-bold text-sm text-white pt-1 border-t border-slate-700">
                 <span>Total:</span>
-                <span>${(successReceipt.grandTotalInCents / 100).toFixed(2)}</span>
+                <span>{formatCurrency(successReceipt.grandTotalInCents, currency)}</span>
               </div>
             </div>
 
             <button
               type="button"
               onClick={() => setSuccessReceipt(null)}
-              className="w-full py-2.5 bg-amber-500 hover:bg-amber-400 text-black font-bold text-sm rounded-xl transition"
+              className="w-full py-2.5 bg-amber-500 hover:bg-amber-400 text-black font-bold text-sm rounded-xl transition cursor-pointer"
             >
               New Ticket (Ready)
             </button>
