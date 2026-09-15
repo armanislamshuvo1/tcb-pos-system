@@ -373,6 +373,12 @@ export default function ActiveTicket({
             const unitPriceFormatted = formatCurrency(item.unitPriceInCents, currency);
             const lineTotalFormatted = formatCurrency(item.finalLineTotalInCents, currency);
             const hasDiscount = item.lineDiscountInCents > 0;
+            const hasProductDiscount = item.productDiscountType && item.productDiscountType !== 'none' && item.productDiscountValue > 0;
+            const productDiscLabel = hasProductDiscount
+              ? (item.productDiscountType === 'percentage'
+                  ? `${item.productDiscountValue}%`
+                  : formatCurrency(item.productDiscountValue, currency))
+              : '';
 
             return (
               <div key={item.productId} className="pt-2.5 first:pt-0">
@@ -416,8 +422,37 @@ export default function ActiveTicket({
                     </button>
                   </div>
 
-                  <div className="flex items-center space-x-2">
-                    {/* Line discount button */}
+                  <div className="flex items-center space-x-1.5">
+                    {/* If discount is applied: show applied badge with remove (X) */}
+                    {hasDiscount ? (
+                      <button
+                        type="button"
+                        onClick={() => setLineDiscount(item.productId, 'none', 0)}
+                        className="text-xs px-2.5 py-1 rounded-md border border-emerald-700 bg-emerald-950/80 text-emerald-400 font-bold hover:bg-emerald-900/90 active:scale-95 flex items-center space-x-1.5 transition cursor-pointer shadow-sm group"
+                        title="Discount applied. Click to remove discount"
+                      >
+                        <Tag className="w-3 h-3 text-emerald-400" />
+                        <span>
+                          {item.lineDiscountType === 'fixed_cents'
+                            ? `-${formatCurrency(item.lineDiscountValue, currency)}`
+                            : `-${item.lineDiscountValue}%`}
+                        </span>
+                        <X className="w-3 h-3 text-emerald-400/70 group-hover:text-red-400 transition-colors ml-0.5" />
+                      </button>
+                    ) : hasProductDiscount ? (
+                      /* If product has configured discount: show selectable discount label */
+                      <button
+                        type="button"
+                        onClick={() => setLineDiscount(item.productId, item.productDiscountType, item.productDiscountValue)}
+                        className="text-xs px-2.5 py-1 rounded-md border border-dashed border-amber-500/70 bg-amber-500/10 text-amber-300 hover:bg-amber-500/25 active:scale-95 flex items-center space-x-1 transition cursor-pointer font-semibold shadow-sm"
+                        title={`Click to apply -${productDiscLabel}`}
+                      >
+                        <Tag className="w-3 h-3 text-amber-400" />
+                        <span>+ Disc -{productDiscLabel}</span>
+                      </button>
+                    ) : null}
+
+                    {/* Custom / Manual line discount button */}
                     <button
                       type="button"
                       onClick={() => {
@@ -434,20 +469,15 @@ export default function ActiveTicket({
                           }
                         }
                       }}
-                      className={`text-xs px-2.5 py-1 rounded-md border flex items-center space-x-1 transition cursor-pointer ${
-                        hasDiscount
+                      className={`text-xs px-2 py-1 rounded-md border transition cursor-pointer flex items-center space-x-1 ${
+                        hasDiscount && !hasProductDiscount
                           ? 'bg-emerald-950/80 border-emerald-700 text-emerald-400 font-bold'
                           : 'bg-slate-800 border-slate-700 text-slate-300 hover:text-white'
                       }`}
+                      title="Custom discount"
                     >
-                      <Tag className="w-3 h-3" />
-                      <span>
-                        {hasDiscount 
-                          ? (item.lineDiscountType === 'fixed_cents' 
-                              ? `-${formatCurrency(item.lineDiscountValue, currency)}` 
-                              : `-${item.lineDiscountValue}%`)
-                          : 'Disc'}
-                      </span>
+                      {!hasDiscount && !hasProductDiscount && <Tag className="w-3 h-3" />}
+                      <span>{hasDiscount && !hasProductDiscount ? `-${item.lineDiscountValue}%` : 'Disc'}</span>
                     </button>
 
                     {/* Delete Item */}
@@ -465,6 +495,19 @@ export default function ActiveTicket({
                 {/* Popover Manual Line Discount Editor with Amount / % Toggle */}
                 {selectedLineDiscountId === item.productId && (
                   <div className="mt-2 p-3 bg-slate-800/95 rounded-xl border border-slate-700 space-y-2 animate-in fade-in duration-100">
+                    {hasProductDiscount && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setLineDiscount(item.productId, item.productDiscountType, item.productDiscountValue);
+                          setSelectedLineDiscountId(null);
+                        }}
+                        className="w-full py-1.5 px-2 bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 rounded-lg text-amber-300 text-xs font-semibold flex items-center justify-center space-x-1 transition cursor-pointer mb-2"
+                      >
+                        <Tag className="w-3 h-3 text-amber-400" />
+                        <span>Apply Product Promo (-{productDiscLabel})</span>
+                      </button>
+                    )}
                     <div className="flex items-center justify-between text-xs">
                       <span className="text-slate-300 font-semibold">Custom Item Discount</span>
                       {/* Discount Unit Switch */}
