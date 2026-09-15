@@ -58,12 +58,20 @@ const runMigration = async () => {
     ]);
     console.log('[Migration] Associated existing products, categories, discounts, transactions and users with default company.');
 
-    // 3. Promote current admin(s) to system_admin
+    // 3. Promote ONLY the bootstrap system admin accounts to system_admin.
+    //    We MUST NOT use role: 'admin' as a filter here — that would accidentally
+    //    escalate B2B company admins to system_admin on every server restart.
+    //    Only promote by explicit bootstrap identity (email or employee code).
     const promotedAdmins = await User.updateMany(
-      { $or: [{ role: 'admin' }, { employeeCode: 'ADM-001' }, { email: 'arman@tcbpos.com' }] },
+      {
+        $or: [
+          { employeeCode: 'ADM-001' },
+          { email: 'arman@tcbpos.com' }
+        ]
+      },
       { $set: { role: 'system_admin' } }
     );
-    console.log(`[Migration] Promoted ${promotedAdmins.modifiedCount} admin user(s) to 'system_admin'.`);
+    console.log(`[Migration] Promoted ${promotedAdmins.modifiedCount} bootstrap admin(s) to 'system_admin'.`);
 
     // Verify system_admin user
     const systemAdmins = await User.find({ role: 'system_admin' }).select('fullName employeeCode email role');
