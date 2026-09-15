@@ -91,7 +91,7 @@ export default function PosPage() {
   }, [products, activeCategoryId, searchTerm]);
 
   // Checkout API call
-  const handleCheckout = async ({ status, paymentMethod, staffMemberId, notes: customNotes }) => {
+  const handleCheckout = async ({ status, paymentMethod, staffMemberId, tabType, roomNumber, guestName, notes: customNotes }) => {
     const idempotencyKey = `pos_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
 
     const payload = {
@@ -108,7 +108,10 @@ export default function PosPage() {
       globalDiscount,
       status,
       paymentMethod,
-      staffMemberId,
+      staffMemberId: staffMemberId || null,
+      tabType: tabType || (roomNumber ? 'ROOM' : (staffMemberId ? 'STAFF' : 'NONE')),
+      roomNumber: roomNumber || null,
+      guestName: guestName || null,
       notes: customNotes !== undefined ? customNotes : notes
     };
 
@@ -134,7 +137,9 @@ export default function PosPage() {
             txnNumber: `${clientTxnUuid} (Queued)`,
             status,
             grandTotalInCents: items.reduce((acc, i) => acc + i.finalLineTotalInCents, 0),
-            staffNameSnapshot: staffMembers.find((s) => s._id === staffMemberId)?.fullName
+            staffNameSnapshot: staffMembers.find((s) => s._id === staffMemberId)?.fullName,
+            roomNumber: payload.roomNumber,
+            guestName: payload.guestName
           }
         };
       }

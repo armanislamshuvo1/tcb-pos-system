@@ -63,7 +63,7 @@ export default function Header() {
 
   const navItems = [
     { label: 'POS Terminal', href: '/', icon: ShoppingBag, desc: 'Point-of-Sale checkout & active ticket' },
-    { label: 'Staff Tabs', href: '/tabs', icon: Users, desc: 'Consolidated tabs & settlement' },
+    { label: 'Tabs & Room Bills', href: '/tabs', icon: Users, desc: 'Consolidated staff tabs & room bills' },
     { label: 'Ledger', href: '/ledger', icon: Receipt, desc: 'Transaction history & audit trail' },
     ...(isAdmin ? [
       { label: 'Admin Dashboard', href: '/admin', icon: FolderKanban, desc: 'Catalog, staff, currency & discounts' },

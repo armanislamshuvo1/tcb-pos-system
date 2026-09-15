@@ -29,6 +29,9 @@ exports.createTransaction = async (req, res, next) => {
       status = 'PAID', // 'PAID' or 'UNPAID_TAB'
       paymentMethod = 'CASH', // 'CASH', 'CARD', 'TAB_DEFERRED'
       staffMemberId,
+      tabType, // 'STAFF' or 'ROOM'
+      roomNumber,
+      guestName,
       notes
     } = req.body;
 
@@ -50,14 +53,33 @@ exports.createTransaction = async (req, res, next) => {
       }
     }
 
-    // Require staff member when opening an UNPAID_TAB
-    if (status === 'UNPAID_TAB' && !resolvedStaffMemberId) {
-      await session.abortTransaction();
-      session.endSession();
-      return res.status(400).json({
-        success: false,
-        message: 'A staff member must be assigned to open an unpaid tab'
-      });
+    // Determine and validate tab type
+    let resolvedTabType = 'NONE';
+    if (status === 'UNPAID_TAB') {
+      if (tabType === 'ROOM' || roomNumber) {
+        if (!roomNumber || !roomNumber.trim()) {
+          await session.abortTransaction();
+          session.endSession();
+          return res.status(400).json({
+            success: false,
+            message: 'A Room Number must be selected to hold a Room Bill'
+          });
+        }
+        resolvedTabType = 'ROOM';
+      } else {
+        if (!resolvedStaffMemberId) {
+          await session.abortTransaction();
+          session.endSession();
+          return res.status(400).json({
+            success: false,
+            message: 'A staff member must be assigned to open an unpaid staff tab'
+          });
+        }
+        resolvedTabType = 'STAFF';
+      }
+    } else {
+      if (roomNumber) resolvedTabType = 'ROOM';
+      else if (resolvedStaffMemberId) resolvedTabType = 'STAFF';
     }
 
     // Calculate deterministic integer financials
@@ -77,8 +99,11 @@ exports.createTransaction = async (req, res, next) => {
       status,
       cashierId,
       cashierNameSnapshot,
+      tabType: resolvedTabType,
       staffMemberId: resolvedStaffMemberId,
       staffNameSnapshot,
+      roomNumber: roomNumber ? roomNumber.toUpperCase().trim() : undefined,
+      guestName: guestName ? guestName.trim() : undefined,
       items: financials.processedItems,
       subtotalInCents: financials.subtotalInCents,
       globalDiscountType: globalDiscount?.type || 'none',
@@ -87,6 +112,7 @@ exports.createTransaction = async (req, res, next) => {
       grandTotalInCents: financials.grandTotalInCents,
       paymentMethod: status === 'UNPAID_TAB' ? 'TAB_DEFERRED' : paymentMethod,
       settledAt: status === 'PAID' ? new Date() : undefined,
+      companyId: req.user.companyId || null,
       notes
     }], { session });
 
@@ -138,6 +164,9 @@ exports.getLedger = async (req, res, next) => {
     } = req.query;
 
     const filter = {};
+    if (req.user && req.user.role !== 'system_admin' && req.user.companyId) {
+      filter.companyId = req.user.companyId;
+    }
 
     // Date range filter: default to start of today local time if omitted
     if (startDate || endDate) {

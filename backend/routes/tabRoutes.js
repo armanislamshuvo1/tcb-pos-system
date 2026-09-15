@@ -5,6 +5,8 @@ const { authenticateToken } = require('../middleware/authMiddleware');
 
 router.get('/consolidated', authenticateToken, tabController.getConsolidatedStaffTabs);
 router.get('/by-product', authenticateToken, tabController.getUnpaidTabsByProduct);
+router.get('/rooms', authenticateToken, tabController.getConsolidatedRoomTabs);
+router.get('/rooms/:roomNumber/transactions', authenticateToken, tabController.getRoomOpenTransactions);
 router.get('/staff/:staffId/transactions', authenticateToken, tabController.getStaffOpenTransactions);
 router.post('/settle-transactions', authenticateToken, tabController.settleTransactions);
 

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import Header from '../../components/Header';
 import { useAxiosSecure } from '../../hooks/useApi';
 import { useAuth } from '../../context/AuthContext';
@@ -18,14 +18,18 @@ import {
   FileText,
   X,
   Package,
-  Search
+  Search,
+  BedDouble,
+  UserCheck,
+  Building
 } from 'lucide-react';
+import { ROOM_WINGS, isDormRoom, getRoomByNumber } from '../../utils/rooms';
 
 export default function StaffTabsPage() {
   const axiosSecure = useAxiosSecure();
   const { currency } = useAuth();
   
-  // Dual-view state: 'by_staff' | 'by_product'
+  // Tri-view state: 'by_staff' | 'by_room' | 'by_product'
   const [viewMode, setViewMode] = useState('by_staff');
 
   // Staff Tabs State
@@ -34,6 +38,14 @@ export default function StaffTabsPage() {
   const [expandedStaffId, setExpandedStaffId] = useState(null);
   const [expandedItemKeys, setExpandedItemKeys] = useState({});
 
+  // Room Tabs State (Customer room bills)
+  const [roomTabs, setRoomTabs] = useState([]);
+  const [roomLoading, setRoomLoading] = useState(false);
+  const [roomSearchTerm, setRoomSearchTerm] = useState('');
+  const [selectedWing, setSelectedWing] = useState('ALL');
+  const [expandedRoomKeys, setExpandedRoomKeys] = useState({});
+  const [expandedRoomItemKeys, setExpandedRoomItemKeys] = useState({});
+
   // Product Tabs State (Search unpaid items by product name)
   const [productTabs, setProductTabs] = useState([]);
   const [productSearchTerm, setProductSearchTerm] = useState('');
@@ -41,12 +53,20 @@ export default function StaffTabsPage() {
   const [expandedProductNames, setExpandedProductNames] = useState({});
   const [expandedProductAuditKeys, setExpandedProductAuditKeys] = useState({});
 
-  // Settle Modal State
+  // Staff Settle Modal State
   const [settleModalStaff, setSettleModalStaff] = useState(null);
   const [staffTransactions, setStaffTransactions] = useState([]);
   const [selectedTxnIds, setSelectedTxnIds] = useState([]);
   const [paymentMethod, setPaymentMethod] = useState('CASH');
   const [settleLoading, setSettleLoading] = useState(false);
+
+  // Room Settle Modal State
+  const [settleModalRoom, setSettleModalRoom] = useState(null);
+  const [roomTransactions, setRoomTransactions] = useState([]);
+  const [selectedRoomTxnIds, setSelectedRoomTxnIds] = useState([]);
+  const [roomPaymentMethod, setRoomPaymentMethod] = useState('CASH');
+  const [roomSettleLoading, setRoomSettleLoading] = useState(false);
+
   const [feedback, setFeedback] = useState(null);
 
   const fetchConsolidatedTabs = async () => {
@@ -60,6 +80,24 @@ export default function StaffTabsPage() {
       console.error('Failed to load tabs:', err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchRoomTabs = async (search = '') => {
+    try {
+      setRoomLoading(true);
+      const params = {};
+      if (search && search.trim()) {
+        params.search = search.trim();
+      }
+      const res = await axiosSecure.get('/api/tabs/rooms', { params });
+      if (res.data?.success) {
+        setRoomTabs(res.data.data);
+      }
+    } catch (err) {
+      console.error('Failed to load room tabs:', err);
+    } finally {
+      setRoomLoading(false);
     }
   };
 
@@ -83,7 +121,18 @@ export default function StaffTabsPage() {
 
   useEffect(() => {
     fetchConsolidatedTabs();
+    fetchRoomTabs();
   }, [axiosSecure]);
+
+  // Real-time debounced query for room search view
+  useEffect(() => {
+    if (viewMode === 'by_room') {
+      const timer = setTimeout(() => {
+        fetchRoomTabs(roomSearchTerm);
+      }, 250);
+      return () => clearTimeout(timer);
+    }
+  }, [roomSearchTerm, viewMode, axiosSecure]);
 
   // Real-time debounced query for product search view
   useEffect(() => {
@@ -106,6 +155,20 @@ export default function StaffTabsPage() {
     }));
   };
 
+  const toggleRoomAccordion = (key) => {
+    setExpandedRoomKeys((prev) => ({
+      ...prev,
+      [key]: !prev[key]
+    }));
+  };
+
+  const toggleRoomItemHistory = (key) => {
+    setExpandedRoomItemKeys((prev) => ({
+      ...prev,
+      [key]: !prev[key]
+    }));
+  };
+
   const toggleProductAccordion = (productName) => {
     setExpandedProductNames((prev) => ({
       ...prev,
@@ -120,7 +183,7 @@ export default function StaffTabsPage() {
     }));
   };
 
-  // Open Settle Modal and fetch discrete transactions
+  // Open Staff Settle Modal and fetch discrete transactions
   const openSettleModal = async (staffId, staffName) => {
     try {
       setSettleLoading(true);
@@ -153,7 +216,7 @@ export default function StaffTabsPage() {
     }
   };
 
-  // Execute whole-transaction settlement
+  // Execute whole-transaction settlement for Staff
   const handleExecuteSettlement = async () => {
     if (selectedTxnIds.length === 0) return;
 
@@ -171,8 +234,8 @@ export default function StaffTabsPage() {
           type: 'success',
           message: `Successfully settled ${res.data.data.settledCount} transaction(s) (${formatCurrency(res.data.data.totalSettledInCents, currency)}) via ${paymentMethod}`
         });
-        // Refresh both views
         await fetchConsolidatedTabs();
+        await fetchRoomTabs(roomSearchTerm);
         if (viewMode === 'by_product') {
           await fetchTabsByProduct(productSearchTerm);
         }
@@ -188,11 +251,95 @@ export default function StaffTabsPage() {
     }
   };
 
-  const totalOutstandingCents = tabs.reduce((acc, tab) => acc + tab.totalOwedInCents, 0);
+  // Open Room Settle Modal and fetch discrete transactions
+  const openRoomSettleModal = async (roomNumber, guestName) => {
+    try {
+      setRoomSettleLoading(true);
+      setSettleModalRoom({ roomNumber, guestName: guestName || '' });
+      const params = {};
+      if (guestName) params.guestName = guestName;
+      const res = await axiosSecure.get(`/api/tabs/rooms/${roomNumber}/transactions`, { params });
+      if (res.data?.success) {
+        const txns = res.data.data.transactions;
+        setRoomTransactions(txns);
+        setSelectedRoomTxnIds(txns.map((t) => t._id));
+      }
+    } catch (err) {
+      console.error('Error fetching room transactions:', err);
+    } finally {
+      setRoomSettleLoading(false);
+    }
+  };
+
+  const handleToggleRoomTxnSelect = (txnId) => {
+    setSelectedRoomTxnIds((prev) =>
+      prev.includes(txnId) ? prev.filter((id) => id !== txnId) : [...prev, txnId]
+    );
+  };
+
+  const handleSelectAllRoomTxns = () => {
+    if (selectedRoomTxnIds.length === roomTransactions.length) {
+      setSelectedRoomTxnIds([]);
+    } else {
+      setSelectedRoomTxnIds(roomTransactions.map((t) => t._id));
+    }
+  };
+
+  // Execute whole-transaction settlement for Room
+  const handleExecuteRoomSettlement = async () => {
+    if (selectedRoomTxnIds.length === 0) return;
+
+    setRoomSettleLoading(true);
+    setFeedback(null);
+
+    try {
+      const res = await axiosSecure.post('/api/tabs/settle-transactions', {
+        transactionIds: selectedRoomTxnIds,
+        paymentMethod: roomPaymentMethod
+      });
+
+      if (res.data?.success) {
+        setFeedback({
+          type: 'success',
+          message: `Successfully settled ${res.data.data.settledCount} transaction(s) (${formatCurrency(res.data.data.totalSettledInCents, currency)}) for Room ${settleModalRoom.roomNumber}${settleModalRoom.guestName ? ` (${settleModalRoom.guestName})` : ''} via ${roomPaymentMethod}`
+        });
+        await fetchRoomTabs(roomSearchTerm);
+        await fetchConsolidatedTabs();
+        if (viewMode === 'by_product') {
+          await fetchTabsByProduct(productSearchTerm);
+        }
+        setSettleModalRoom(null);
+      }
+    } catch (err) {
+      setFeedback({
+        type: 'error',
+        message: err.response?.data?.message || 'Room bill settlement failed'
+      });
+    } finally {
+      setRoomSettleLoading(false);
+    }
+  };
+
+  const totalStaffOwedCents = tabs.reduce((acc, tab) => acc + tab.totalOwedInCents, 0);
+  const totalRoomOwedCents = roomTabs.reduce((acc, tab) => acc + tab.totalOwedInCents, 0);
+  const totalOutstandingCents = totalStaffOwedCents + totalRoomOwedCents;
 
   const selectedTotalInCents = staffTransactions
     .filter((t) => selectedTxnIds.includes(t._id))
     .reduce((acc, t) => acc + t.grandTotalInCents, 0);
+
+  const selectedRoomTotalInCents = roomTransactions
+    .filter((t) => selectedRoomTxnIds.includes(t._id))
+    .reduce((acc, t) => acc + t.grandTotalInCents, 0);
+
+  // Filtered room tabs based on Wing filter
+  const filteredRoomTabs = useMemo(() => {
+    return roomTabs.filter((tab) => {
+      if (selectedWing === 'ALL') return true;
+      const wing = tab.roomNumber ? tab.roomNumber.charAt(0).toUpperCase() : '';
+      return wing === selectedWing;
+    });
+  }, [roomTabs, selectedWing]);
 
   return (
     <div className="min-h-screen bg-slate-950 text-white flex flex-col">
@@ -204,17 +351,31 @@ export default function StaffTabsPage() {
           <div>
             <h1 className="text-2xl font-black text-white flex items-center space-x-2.5">
               <Users className="w-7 h-7 text-amber-400" />
-              <span>Staff Tab Management</span>
+              <span>Tabs & Customer Room Bills</span>
             </h1>
             <p className="text-sm text-slate-400 mt-0.5">
-              Consolidated product views with nested audit timestamps & whole-transaction settlements.
+              Consolidated customer room bills & staff tabs with nested audit timestamps & whole-transaction settlements.
             </p>
           </div>
 
-          <div className="flex items-center space-x-3">
-            <div className="px-4 py-2 bg-slate-900 border border-slate-800 rounded-xl text-right">
-              <div className="text-xs text-slate-400 font-semibold">Total Outstanding Tabs</div>
-              <div className="text-xl font-extrabold text-amber-400 font-mono">
+          <div className="flex items-center space-x-2.5 flex-wrap gap-y-2">
+            <div className="px-3.5 py-1.5 bg-slate-900 border border-slate-800 rounded-xl text-right">
+              <div className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">Staff Tabs</div>
+              <div className="text-base font-extrabold text-amber-400 font-mono">
+                {formatCurrency(totalStaffOwedCents, currency)}
+              </div>
+            </div>
+
+            <div className="px-3.5 py-1.5 bg-slate-900 border border-slate-800 rounded-xl text-right">
+              <div className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">Room Bills</div>
+              <div className="text-base font-extrabold text-amber-400 font-mono">
+                {formatCurrency(totalRoomOwedCents, currency)}
+              </div>
+            </div>
+
+            <div className="px-4 py-1.5 bg-amber-500/10 border border-amber-500/30 rounded-xl text-right">
+              <div className="text-[10px] text-amber-300 font-semibold uppercase tracking-wider">Total Outstanding</div>
+              <div className="text-lg font-black text-amber-400 font-mono">
                 {formatCurrency(totalOutstandingCents, currency)}
               </div>
             </div>
@@ -237,11 +398,11 @@ export default function StaffTabsPage() {
 
         {/* View Mode Switcher */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-900/60 p-2 rounded-2xl border border-slate-800">
-          <div className="flex items-center space-x-2">
+          <div className="flex items-center space-x-2 overflow-x-auto pb-1 sm:pb-0 scrollbar-none">
             <button
               type="button"
               onClick={() => setViewMode('by_staff')}
-              className={`flex items-center space-x-2 px-4 py-2.5 rounded-xl font-bold text-sm transition ${
+              className={`flex items-center space-x-2 px-4 py-2.5 rounded-xl font-bold text-sm transition shrink-0 ${
                 viewMode === 'by_staff'
                   ? 'bg-amber-500 text-black shadow-lg shadow-amber-500/20'
                   : 'bg-slate-800/80 text-slate-300 hover:bg-slate-800 hover:text-white'
@@ -254,12 +415,30 @@ export default function StaffTabsPage() {
             <button
               type="button"
               onClick={() => {
+                setViewMode('by_room');
+                if (roomTabs.length === 0) {
+                  fetchRoomTabs(roomSearchTerm);
+                }
+              }}
+              className={`flex items-center space-x-2 px-4 py-2.5 rounded-xl font-bold text-sm transition shrink-0 ${
+                viewMode === 'by_room'
+                  ? 'bg-amber-500 text-black shadow-lg shadow-amber-500/20'
+                  : 'bg-slate-800/80 text-slate-300 hover:bg-slate-800 hover:text-white'
+              }`}
+            >
+              <BedDouble className="w-4 h-4" />
+              <span>By Room Bill ({roomTabs.length})</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
                 setViewMode('by_product');
                 if (productTabs.length === 0) {
                   fetchTabsByProduct(productSearchTerm);
                 }
               }}
-              className={`flex items-center space-x-2 px-4 py-2.5 rounded-xl font-bold text-sm transition ${
+              className={`flex items-center space-x-2 px-4 py-2.5 rounded-xl font-bold text-sm transition shrink-0 ${
                 viewMode === 'by_product'
                   ? 'bg-amber-500 text-black shadow-lg shadow-amber-500/20'
                   : 'bg-slate-800/80 text-slate-300 hover:bg-slate-800 hover:text-white'
@@ -270,7 +449,7 @@ export default function StaffTabsPage() {
             </button>
           </div>
 
-          <div className="text-xs text-slate-400 font-medium px-2 flex items-center space-x-1.5">
+          <div className="text-xs text-slate-400 font-medium px-2 flex items-center space-x-1.5 shrink-0">
             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
             <span>Live unpaid ledger (status: <strong className="text-amber-400 font-mono">UNPAID_TAB</strong>)</span>
           </div>
@@ -431,7 +610,274 @@ export default function StaffTabsPage() {
           </div>
         )}
 
-        {/* View 2: Search Unpaid by Product View */}
+        {/* View 2: Consolidated Customer Room Bills */}
+        {viewMode === 'by_room' && (
+          <div className="space-y-4">
+            {/* Search Input Box & Wing Filters */}
+            <div className="space-y-3">
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
+                  <Search className="w-5 h-5 text-slate-400" />
+                </div>
+                <input
+                  type="text"
+                  value={roomSearchTerm}
+                  onChange={(e) => setRoomSearchTerm(e.target.value)}
+                  placeholder="Search by room number (e.g., B104, D105, V101, H102), guest name, or product..."
+                  className="w-full pl-11 pr-10 py-3.5 bg-slate-900 border border-slate-700 rounded-2xl text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500 text-sm shadow-inner transition"
+                />
+                {roomSearchTerm && (
+                  <button
+                    type="button"
+                    onClick={() => setRoomSearchTerm('')}
+                    className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-slate-400 hover:text-white"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
+
+              {/* Wing Filter Pills */}
+              <div className="flex items-center space-x-2 overflow-x-auto pb-1 scrollbar-none">
+                <span className="text-xs font-semibold text-slate-400 shrink-0">Filter Wing:</span>
+                {ROOM_WINGS.map((wing) => {
+                  const isActive = selectedWing === wing.id;
+                  return (
+                    <button
+                      key={wing.id}
+                      type="button"
+                      onClick={() => setSelectedWing(wing.id)}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition shrink-0 border ${
+                        isActive
+                          ? 'bg-amber-500 text-black border-amber-500 shadow-sm'
+                          : 'bg-slate-900 text-slate-300 border-slate-800 hover:bg-slate-800 hover:text-white'
+                      }`}
+                    >
+                      {wing.label}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Context Summary Bar */}
+              <div className="flex flex-wrap items-center justify-between text-xs text-slate-400 px-1 gap-2">
+                <div>
+                  Showing <strong className="text-white">{filteredRoomTabs.length}</strong> active room tab{filteredRoomTabs.length === 1 ? '' : 's'}
+                  {roomSearchTerm && <span> matching &ldquo;<span className="text-amber-400 font-semibold">{roomSearchTerm}</span>&rdquo;</span>}
+                </div>
+                <div className="flex items-center space-x-3">
+                  <span>
+                    Total Room Balance Due: <strong className="text-amber-400 font-mono text-sm">{formatCurrency(filteredRoomTabs.reduce((acc, r) => acc + r.totalOwedInCents, 0), currency)}</strong>
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Room List Content */}
+            {roomLoading ? (
+              <div className="flex items-center justify-center h-48 text-slate-400 text-sm">
+                Loading customer room bills...
+              </div>
+            ) : filteredRoomTabs.length === 0 ? (
+              <div className="p-12 text-center bg-slate-900/60 rounded-2xl border border-slate-800/80">
+                <CheckCircle className="w-12 h-12 text-emerald-400 mx-auto mb-3" />
+                <h3 className="text-lg font-bold text-white">All Customer Room Bills Clear!</h3>
+                <p className="text-sm text-slate-400 mt-1">
+                  {roomSearchTerm
+                    ? `No open customer bills match "${roomSearchTerm}".`
+                    : 'There are no outstanding customer room tabs in this wing at this time.'}
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {filteredRoomTabs.map((tab) => {
+                  const roomKey = `${tab.roomNumber}_${tab.guestName || ''}`;
+                  const isExpanded = !!expandedRoomKeys[roomKey];
+                  const dorm = isDormRoom(tab.roomNumber);
+                  const roomMeta = getRoomByNumber(tab.roomNumber);
+                  const wingChar = tab.roomNumber ? tab.roomNumber.charAt(0).toUpperCase() : 'OTHER';
+
+                  const wingColors = {
+                    B: 'bg-blue-500/10 text-blue-400 border-blue-500/30',
+                    V: 'bg-purple-500/10 text-purple-400 border-purple-500/30',
+                    H: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30',
+                    D: 'bg-orange-500/10 text-orange-400 border-orange-500/30',
+                    S: 'bg-rose-500/10 text-rose-400 border-rose-500/30'
+                  };
+                  const badgeStyle = wingColors[wingChar] || 'bg-slate-800 text-slate-300 border-slate-700';
+
+                  return (
+                    <div
+                      key={roomKey}
+                      className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden transition shadow-sm hover:border-slate-750"
+                    >
+                      {/* Room Row Header */}
+                      <div
+                        onClick={() => toggleRoomAccordion(roomKey)}
+                        className="p-4 sm:p-5 flex items-center justify-between cursor-pointer hover:bg-slate-850 transition select-none flex-wrap gap-4"
+                      >
+                        <div className="flex items-center space-x-3.5">
+                          <div className="p-2.5 rounded-xl bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                            {isExpanded ? <ChevronDown className="w-5 h-5" /> : <ChevronRight className="w-5 h-5" />}
+                          </div>
+                          <div>
+                            <div className="flex items-center space-x-2 flex-wrap gap-y-1">
+                              <span className={`px-2.5 py-0.5 rounded-full text-xs font-extrabold uppercase border ${badgeStyle}`}>
+                                {tab.roomNumber}
+                              </span>
+                              <h2 className="text-base sm:text-lg font-extrabold text-white">
+                                {roomMeta?.type || 'Room'} {tab.roomNumber}
+                              </h2>
+                              {dorm && (
+                                <span className="px-2 py-0.5 rounded-md text-[11px] font-bold bg-orange-500/15 text-orange-400 border border-orange-500/30">
+                                  Dorm (6 Pax)
+                                </span>
+                              )}
+                              {tab.guestName && (
+                                <span className="px-2.5 py-0.5 rounded-md text-xs font-bold bg-slate-800 text-emerald-400 border border-slate-700 flex items-center space-x-1">
+                                  <UserCheck className="w-3.5 h-3.5 text-emerald-400" />
+                                  <span>Guest: {tab.guestName}</span>
+                                </span>
+                              )}
+                            </div>
+                            <span className="text-xs text-slate-400 block mt-1">
+                              {tab.consolidatedItems?.length || 0} distinct item{tab.consolidatedItems?.length === 1 ? '' : 's'} consumed ({tab.itemCount} units)
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center space-x-4">
+                          <div className="text-right">
+                            <div className="text-xs text-slate-400 font-medium">Balance Due</div>
+                            <div className="text-lg sm:text-xl font-extrabold text-amber-400 font-mono">
+                              {formatCurrency(tab.totalOwedInCents, currency)}
+                            </div>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openRoomSettleModal(tab.roomNumber, tab.guestName);
+                            }}
+                            className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-bold text-xs sm:text-sm rounded-xl shadow-md transition flex items-center space-x-1.5 cursor-pointer"
+                          >
+                            <DollarSign className="w-4 h-4" />
+                            <span>Settle Room Bill</span>
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Accordion Content: Consolidated Items */}
+                      {isExpanded && (
+                        <div className="border-t border-slate-800 p-4 sm:p-5 bg-slate-950/60 space-y-3">
+                          <div className="text-xs uppercase tracking-wider font-bold text-slate-400 flex items-center space-x-2">
+                            <Layers className="w-4 h-4 text-amber-400" />
+                            <span>Consolidated Room Consumption</span>
+                          </div>
+
+                          <div className="divide-y divide-slate-800 border border-slate-800 rounded-xl overflow-hidden bg-slate-900/90">
+                            {tab.consolidatedItems.map((item, index) => {
+                              const auditKey = `${roomKey}_${item.productId || index}`;
+                              const isAuditOpen = !!expandedRoomItemKeys[auditKey];
+
+                              return (
+                                <div key={index} className="p-3.5 sm:p-4 space-y-2">
+                                  <div className="flex items-center justify-between">
+                                    <div>
+                                      <div className="font-bold text-sm text-white flex items-center space-x-2">
+                                        <span>{item.productName}</span>
+                                        {item.categoryName && (
+                                          <span className="text-[10px] uppercase font-semibold px-2 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700">
+                                            {item.categoryName}
+                                          </span>
+                                        )}
+                                      </div>
+                                      <div className="text-xs text-slate-400 font-mono mt-0.5">
+                                        Unit: {formatCurrency(item.unitPriceInCents, currency)}
+                                      </div>
+                                    </div>
+
+                                    <div className="flex items-center space-x-4">
+                                      <div className="text-right">
+                                        <div className="text-xs text-slate-400 font-bold font-mono">
+                                          Qty: <span className="text-white text-sm">{item.totalQuantity}</span>
+                                        </div>
+                                        <div className="text-sm font-extrabold text-amber-400 font-mono">
+                                          {formatCurrency(item.totalAmountInCents, currency)}
+                                        </div>
+                                      </div>
+
+                                      {/* Occurrence Audit Toggle */}
+                                      {item.history && item.history.length > 0 && (
+                                        <button
+                                          type="button"
+                                          onClick={() => toggleRoomItemHistory(auditKey)}
+                                          className={`p-2 rounded-lg text-xs font-semibold flex items-center space-x-1 transition border ${
+                                            isAuditOpen 
+                                              ? 'bg-amber-500/20 text-amber-300 border-amber-500/40' 
+                                              : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-white'
+                                          }`}
+                                          title="View discrete occurrences and audit timestamps"
+                                        >
+                                          <Clock className="w-3.5 h-3.5" />
+                                          <span className="hidden sm:inline">Audit ({item.history.length})</span>
+                                        </button>
+                                      )}
+                                    </div>
+                                  </div>
+
+                                  {/* Nested Occurrence Timestamps */}
+                                  {isAuditOpen && item.history && (
+                                    <div className="mt-2 p-3 bg-slate-950 rounded-xl border border-slate-800/80 space-y-1.5 text-xs text-slate-300">
+                                      <div className="font-semibold text-[11px] text-amber-400/90 mb-1 flex items-center space-x-1">
+                                        <Clock className="w-3.5 h-3.5" />
+                                        <span>Discrete Taking History & Audited Timestamps:</span>
+                                      </div>
+                                      {item.history.map((occ, oIdx) => {
+                                        const dateObj = new Date(occ.takenAt);
+                                        const dateStr = dateObj.toLocaleDateString();
+                                        const timeStr = dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+                                        return (
+                                          <div
+                                            key={oIdx}
+                                            className="flex flex-col sm:flex-row sm:items-center justify-between py-1.5 border-b border-slate-850 last:border-0 gap-1"
+                                          >
+                                            <div className="flex items-center space-x-2 flex-wrap">
+                                              <span className="font-mono text-amber-400 font-bold">{occ.txnNumber}</span>
+                                              <span className="text-slate-500">•</span>
+                                              <span>{dateStr} at {timeStr}</span>
+                                              <span className="text-emerald-400 font-bold font-mono">({occ.quantity}x)</span>
+                                              {occ.notes && (
+                                                <span className="text-[11px] text-slate-400 italic">
+                                                  &ldquo;{occ.notes}&rdquo;
+                                                </span>
+                                              )}
+                                            </div>
+                                            <div className="text-slate-400 text-[11px]">
+                                              Cashier: <strong className="text-slate-200">{occ.cashierName || 'Operator'}</strong>
+                                            </div>
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* View 3: Search Unpaid by Product View */}
         {viewMode === 'by_product' && (
           <div className="space-y-4">
             {/* Search Input Box */}
@@ -772,6 +1218,141 @@ export default function StaffTabsPage() {
                     className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-bold text-sm rounded-xl shadow-lg shadow-emerald-600/20 disabled:opacity-50 transition"
                   >
                     {settleLoading ? 'Settling...' : `Settle Selected (${formatCurrency(selectedTotalInCents, currency)})`}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Discrete Room Transaction Settlement Modal */}
+        {settleModalRoom && (
+          <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-2xl w-full p-6 space-y-4 shadow-2xl animate-in fade-in zoom-in-95 max-h-[92vh] flex flex-col">
+              {/* Modal Header */}
+              <div className="flex items-center justify-between border-b border-slate-800 pb-3 shrink-0">
+                <div>
+                  <h3 className="text-lg font-bold text-white flex items-center space-x-2">
+                    <BedDouble className="w-5 h-5 text-amber-400" />
+                    <span>
+                      Settle Room Bill: Room {settleModalRoom.roomNumber}
+                      {settleModalRoom.guestName && (
+                        <span className="text-emerald-400 font-semibold ml-2">
+                          (Guest: {settleModalRoom.guestName})
+                        </span>
+                      )}
+                    </span>
+                  </h3>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    Select discrete open charges to settle for this room folio.
+                  </p>
+                </div>
+                <button
+                  onClick={() => setSettleModalRoom(null)}
+                  className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Transactions List with Checkboxes */}
+              <div className="flex-1 overflow-y-auto space-y-2 pr-1 min-h-[140px] max-h-72">
+                <div className="flex items-center justify-between pb-1 border-b border-slate-800 text-xs text-slate-400">
+                  <button
+                    type="button"
+                    onClick={handleSelectAllRoomTxns}
+                    className="font-bold text-amber-400 hover:underline cursor-pointer"
+                  >
+                    {selectedRoomTxnIds.length === roomTransactions.length ? 'Deselect All' : 'Select All'}
+                  </button>
+                  <span>{roomTransactions.length} open transaction(s)</span>
+                </div>
+
+                {roomTransactions.map((txn) => {
+                  const isSelected = selectedRoomTxnIds.includes(txn._id);
+                  const dateStr = new Date(txn.createdAt).toLocaleDateString();
+                  const timeStr = new Date(txn.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+                  return (
+                    <div
+                      key={txn._id}
+                      onClick={() => handleToggleRoomTxnSelect(txn._id)}
+                      className={`p-3 rounded-xl border flex items-center justify-between cursor-pointer transition select-none ${
+                        isSelected
+                          ? 'bg-slate-800/90 border-amber-500/80 text-white'
+                          : 'bg-slate-900 border-slate-800 text-slate-400 hover:bg-slate-850'
+                      }`}
+                    >
+                      <div className="flex items-center space-x-3">
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => {}}
+                          className="w-4 h-4 rounded text-amber-500 focus:ring-amber-500 bg-slate-900 border-slate-700 pointer-events-none"
+                        />
+                        <div>
+                          <div className="font-mono font-bold text-amber-400 text-sm">{txn.txnNumber}</div>
+                          <div className="text-xs text-slate-400">
+                            {dateStr} {timeStr} • {txn.items?.length || 0} items
+                            {txn.notes && <span className="ml-1 text-slate-500 italic">• &ldquo;{txn.notes}&rdquo;</span>}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="font-mono font-bold text-sm">
+                        {formatCurrency(txn.grandTotalInCents, currency)}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Payment Method Selector */}
+              <div className="space-y-2 pt-2 border-t border-slate-800 shrink-0">
+                <div className="text-xs font-semibold text-slate-400">Settlement Payment Method:</div>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  {['CASH', 'CARD', 'TRANSFER', 'OTHER'].map((method) => (
+                    <button
+                      key={method}
+                      type="button"
+                      onClick={() => setRoomPaymentMethod(method)}
+                      className={`py-2 px-3 rounded-xl text-xs font-bold transition border text-center cursor-pointer ${
+                        roomPaymentMethod === method
+                          ? 'bg-amber-500 text-black border-amber-500 shadow-md'
+                          : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-750'
+                      }`}
+                    >
+                      {method.replace('_', ' ')}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Modal Footer / Settlement CTA */}
+              <div className="flex items-center justify-between pt-3 border-t border-slate-800 shrink-0">
+                <div>
+                  <div className="text-xs text-slate-400">Selected ({selectedRoomTxnIds.length} txns):</div>
+                  <div className="text-xl font-black text-amber-400 font-mono">
+                    {formatCurrency(selectedRoomTotalInCents, currency)}
+                  </div>
+                </div>
+
+                <div className="flex items-center space-x-2">
+                  <button
+                    type="button"
+                    onClick={() => setSettleModalRoom(null)}
+                    className="px-4 py-2 text-sm text-slate-400 hover:text-white cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+
+                  <button
+                    type="button"
+                    disabled={roomSettleLoading || selectedRoomTxnIds.length === 0}
+                    onClick={handleExecuteRoomSettlement}
+                    className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-bold text-sm rounded-xl shadow-lg shadow-emerald-600/20 disabled:opacity-50 transition cursor-pointer"
+                  >
+                    {roomSettleLoading ? 'Settling...' : `Settle Room Bill (${formatCurrency(selectedRoomTotalInCents, currency)})`}
                   </button>
                 </div>
               </div>

@@ -10,6 +10,10 @@ exports.getConsolidatedStaffTabs = async (req, res, next) => {
     const { staffId } = req.query;
     const matchStage = { status: 'UNPAID_TAB' };
     
+    if (req.user && req.user.role !== 'system_admin' && req.user.companyId) {
+      matchStage.companyId = new mongoose.Types.ObjectId(req.user.companyId);
+    }
+
     if (staffId) {
       matchStage.staffMemberId = new mongoose.Types.ObjectId(staffId);
     }
@@ -84,10 +88,15 @@ exports.getStaffOpenTransactions = async (req, res, next) => {
   try {
     const { staffId } = req.params;
 
-    const openTransactions = await Transaction.find({
+    const query = {
       staffMemberId: staffId,
       status: 'UNPAID_TAB'
-    })
+    };
+    if (req.user && req.user.role !== 'system_admin' && req.user.companyId) {
+      query.companyId = req.user.companyId;
+    }
+
+    const openTransactions = await Transaction.find(query)
       .sort({ createdAt: -1 })
       .lean();
 
@@ -127,7 +136,7 @@ exports.settleTransactions = async (req, res, next) => {
       });
     }
 
-    if (!['CASH', 'CARD', 'PAYROLL_DEDUCTION'].includes(paymentMethod)) {
+    if (!['CASH', 'CARD', 'PAYROLL_DEDUCTION', 'TRANSFER', 'OTHER'].includes(paymentMethod)) {
       await session.abortTransaction();
       session.endSession();
       return res.status(400).json({
@@ -317,4 +326,166 @@ exports.getUnpaidTabsByProduct = async (req, res, next) => {
     next(error);
   }
 };
+
+// @desc    Get consolidated unpaid customer room bills
+// @route   GET /api/tabs/rooms
+// @access  Authenticated
+exports.getConsolidatedRoomTabs = async (req, res, next) => {
+  try {
+    const { roomNumber, search } = req.query;
+    const matchStage = { 
+      status: 'UNPAID_TAB', 
+      $or: [{ tabType: 'ROOM' }, { roomNumber: { $exists: true, $ne: null } }] 
+    };
+
+    if (req.user?.companyId && req.user.role !== 'system_admin') {
+      matchStage.companyId = new mongoose.Types.ObjectId(req.user.companyId);
+    }
+
+    if (roomNumber) {
+      matchStage.roomNumber = roomNumber.toUpperCase().trim();
+    }
+
+    const pipeline = [
+      { $match: matchStage },
+      { $unwind: '$items' }
+    ];
+
+    if (search && search.trim()) {
+      const term = search.trim();
+      pipeline.push({
+        $match: {
+          $or: [
+            { roomNumber: { $regex: term, $options: 'i' } },
+            { guestName: { $regex: term, $options: 'i' } },
+            { 'items.productNameSnapshot': { $regex: term, $options: 'i' } }
+          ]
+        }
+      });
+    }
+
+    pipeline.push(
+      // Step 1: Group by Room + Guest + Product
+      {
+        $group: {
+          _id: {
+            roomNumber: '$roomNumber',
+            guestName: { $ifNull: ['$guestName', ''] },
+            productId: '$items.productId',
+            productName: '$items.productNameSnapshot',
+            categoryName: '$items.categoryNameSnapshot',
+            unitPriceInCents: '$items.unitPriceInCents'
+          },
+          totalQuantity: { $sum: '$items.quantity' },
+          totalAmountInCents: { $sum: '$items.finalLineTotalInCents' },
+          totalDiscountInCents: { $sum: '$items.lineDiscountInCents' },
+          history: {
+            $push: {
+              transactionId: '$_id',
+              txnNumber: '$txnNumber',
+              quantity: '$items.quantity',
+              lineDiscountInCents: '$items.lineDiscountInCents',
+              takenAt: '$items.takenAt',
+              cashierName: '$cashierNameSnapshot',
+              notes: '$notes'
+            }
+          }
+        }
+      },
+      // Step 2: Group by Room + Guest
+      {
+        $group: {
+          _id: {
+            roomNumber: '$_id.roomNumber',
+            guestName: '$_id.guestName'
+          },
+          totalOwedInCents: { $sum: '$totalAmountInCents' },
+          itemCount: { $sum: '$totalQuantity' },
+          consolidatedItems: {
+            $push: {
+              productId: '$_id.productId',
+              productName: '$_id.productName',
+              categoryName: '$_id.categoryName',
+              unitPriceInCents: '$_id.unitPriceInCents',
+              totalQuantity: '$totalQuantity',
+              totalAmountInCents: '$totalAmountInCents',
+              totalDiscountInCents: '$totalDiscountInCents',
+              history: '$history'
+            }
+          }
+        }
+      },
+      // Step 3: Project
+      {
+        $project: {
+          _id: 0,
+          roomNumber: '$_id.roomNumber',
+          guestName: '$_id.guestName',
+          totalOwedInCents: 1,
+          itemCount: 1,
+          consolidatedItems: 1
+        }
+      },
+      // Step 4: Sort by roomNumber ascending
+      {
+        $sort: { roomNumber: 1, guestName: 1 }
+      }
+    );
+
+    const roomTabs = await Transaction.aggregate(pipeline);
+
+    res.status(200).json({
+      success: true,
+      count: roomTabs.length,
+      data: roomTabs
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Get discrete open transactions for a room
+// @route   GET /api/tabs/rooms/:roomNumber/transactions
+// @access  Authenticated
+exports.getRoomOpenTransactions = async (req, res, next) => {
+  try {
+    const { roomNumber } = req.params;
+    const { guestName } = req.query;
+
+    const query = {
+      roomNumber: roomNumber.toUpperCase().trim(),
+      status: 'UNPAID_TAB'
+    };
+
+    if (req.user?.companyId && req.user.role !== 'system_admin') {
+      query.companyId = req.user.companyId;
+    }
+
+    if (guestName !== undefined && guestName !== '') {
+      query.guestName = guestName;
+    } else if (guestName === '') {
+      query.$or = [{ guestName: null }, { guestName: '' }, { guestName: { $exists: false } }];
+    }
+
+    const openTransactions = await Transaction.find(query)
+      .sort({ createdAt: -1 })
+      .lean();
+
+    const totalBalanceInCents = openTransactions.reduce((acc, t) => acc + t.grandTotalInCents, 0);
+
+    res.status(200).json({
+      success: true,
+      data: {
+        roomNumber: roomNumber.toUpperCase(),
+        guestName: guestName || '',
+        totalBalanceInCents,
+        transactionCount: openTransactions.length,
+        transactions: openTransactions
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 

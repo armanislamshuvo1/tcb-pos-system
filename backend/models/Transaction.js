@@ -47,13 +47,28 @@ const transactionSchema = new mongoose.Schema({
   },
   cashierNameSnapshot: { type: String, required: true },
   
-  // Staff Member Tab Assignment
+  // Tab Assignment (Staff Tab vs. Customer Room Bill)
+  tabType: {
+    type: String,
+    enum: ['STAFF', 'ROOM', 'NONE'],
+    default: 'NONE',
+    index: true
+  },
   staffMemberId: { 
     type: mongoose.Schema.Types.ObjectId, 
     ref: 'User', 
     index: true 
   },
   staffNameSnapshot: { type: String },
+
+  // Customer Room Bill Assignment
+  roomNumber: { 
+    type: String, 
+    index: true 
+  },
+  guestName: { 
+    type: String 
+  },
 
   items: [lineItemSchema],
 
@@ -71,7 +86,7 @@ const transactionSchema = new mongoose.Schema({
   // Settlement Tracking (Whole Transaction Level)
   paymentMethod: { 
     type: String, 
-    enum: ['CASH', 'CARD', 'TAB_DEFERRED', 'PAYROLL_DEDUCTION'], 
+    enum: ['CASH', 'CARD', 'TAB_DEFERRED', 'PAYROLL_DEDUCTION', 'TRANSFER', 'OTHER'], 
     required: true 
   },
   settledAt: { type: Date },
@@ -94,6 +109,7 @@ const transactionSchema = new mongoose.Schema({
 // Compound Indexes for Rapid Ledger Queries & Aggregations
 transactionSchema.index({ createdAt: -1, status: 1 });
 transactionSchema.index({ staffMemberId: 1, status: 1 });
+transactionSchema.index({ roomNumber: 1, status: 1 });
 transactionSchema.index({ createdAt: 1, cashierId: 1 });
 
 module.exports = mongoose.model('Transaction', transactionSchema);

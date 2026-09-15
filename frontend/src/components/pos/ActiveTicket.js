@@ -14,12 +14,16 @@ import {
   CreditCard, 
   Clock, 
   CheckCircle2, 
-  X,
-  AlertCircle,
-  FileText,
-  Receipt
+  X, 
+  AlertCircle, 
+  FileText, 
+  Receipt, 
+  BedDouble, 
+  AlertTriangle 
 } from 'lucide-react';
 import StaffSearchSelect from './StaffSearchSelect';
+import RoomSearchSelect from './RoomSearchSelect';
+import { isDormRoom } from '../../utils/rooms';
 
 export default function ActiveTicket({ staffMembers, presetDiscounts, onCheckout }) {
   const { 
@@ -39,15 +43,25 @@ export default function ActiveTicket({ staffMembers, presetDiscounts, onCheckout
 
   const { currency } = useAuth();
 
+  // Tab Assignment Mode: 'STAFF' | 'ROOM'
+  const [tabType, setTabType] = useState('STAFF');
+  const [selectedRoomNumber, setSelectedRoomNumber] = useState('');
+  const [guestName, setGuestName] = useState('');
+
+  // Discount States
   const [selectedLineDiscountId, setSelectedLineDiscountId] = useState(null);
   const [manualDiscountType, setManualDiscountType] = useState('percentage'); // 'percentage' | 'fixed_cents'
   const [manualDiscountValue, setManualDiscountValue] = useState('10');
   
+  // Checkout States
   const [checkoutLoading, setCheckoutLoading] = useState(false);
   const [pendingCheckout, setPendingCheckout] = useState(null); // { status, paymentMethod }
   const [checkoutNotes, setCheckoutNotes] = useState('');
   const [successReceipt, setSuccessReceipt] = useState(null);
   const [errorMessage, setErrorMessage] = useState('');
+
+  // Action / Validation Alert Modal State
+  const [alertModal, setAlertModal] = useState(null); // { title, message, type }
 
   const totals = getTotals();
 
@@ -82,16 +96,46 @@ export default function ActiveTicket({ staffMembers, presetDiscounts, onCheckout
     }
   };
 
-  // Open the Checkout Confirmation Modal
+  // Open the Checkout Confirmation Modal with Validation
   const initiateCheckout = (status, paymentMethod) => {
     if (items.length === 0) {
-      setErrorMessage('Cart is empty. Add products before checking out.');
+      setAlertModal({
+        title: 'Active Ticket is Empty',
+        message: 'Please add at least one product from the catalog before checking out.',
+        type: 'warning'
+      });
       return;
     }
 
-    if (status === 'UNPAID_TAB' && !staffMember) {
-      setErrorMessage('Please select a staff member to hold this ticket as an unpaid tab.');
-      return;
+    if (status === 'UNPAID_TAB') {
+      if (tabType === 'ROOM') {
+        if (!selectedRoomNumber) {
+          setAlertModal({
+            title: 'Room Number Required',
+            message: 'Please select a Room Number (B101–B109, V101–V108, H101–H110, D101–D106, S101) to hold this customer bill.',
+            type: 'warning'
+          });
+          return;
+        }
+
+        if (isDormRoom(selectedRoomNumber) && !guestName.trim()) {
+          setAlertModal({
+            title: 'Guest / Bed Name Required',
+            message: `Room ${selectedRoomNumber} is a 6-pax shared dormitory. Please enter the guest or bed name to keep individual customer bills separated.`,
+            type: 'warning'
+          });
+          return;
+        }
+      } else {
+        if (!staffMember) {
+          setAlertModal({
+            title: 'Staff Member Required',
+            message: 'Please search and select an employee or staff member to hold this unpaid staff tab.',
+            type: 'warning'
+          });
+          return;
+        }
+      }
     }
 
     setErrorMessage('');
@@ -107,24 +151,39 @@ export default function ActiveTicket({ staffMembers, presetDiscounts, onCheckout
     setCheckoutLoading(true);
 
     try {
-      const result = await onCheckout({
+      const payload = {
         status: pendingCheckout.status,
         paymentMethod: pendingCheckout.paymentMethod,
-        staffMemberId: staffMember?._id || null,
+        tabType: pendingCheckout.status === 'UNPAID_TAB' ? tabType : 'NONE',
+        staffMemberId: tabType === 'STAFF' ? (staffMember?._id || null) : null,
+        roomNumber: tabType === 'ROOM' ? selectedRoomNumber : undefined,
+        guestName: tabType === 'ROOM' && guestName.trim() ? guestName.trim() : undefined,
         notes: checkoutNotes.trim()
-      });
+      };
+
+      const result = await onCheckout(payload);
 
       if (result?.success) {
         setSuccessReceipt(result.data);
         clearCart();
         setPendingCheckout(null);
         setNotes('');
+        setSelectedRoomNumber('');
+        setGuestName('');
       } else {
-        setErrorMessage(result?.message || 'Checkout failed');
+        setAlertModal({
+          title: 'Checkout Failed',
+          message: result?.message || 'Transaction could not be completed.',
+          type: 'error'
+        });
         setPendingCheckout(null);
       }
     } catch (err) {
-      setErrorMessage(err.message || 'Error processing transaction');
+      setAlertModal({
+        title: 'Transaction Error',
+        message: err.response?.data?.message || err.message || 'Error processing transaction.',
+        type: 'error'
+      });
       setPendingCheckout(null);
     } finally {
       setCheckoutLoading(false);
@@ -133,35 +192,94 @@ export default function ActiveTicket({ staffMembers, presetDiscounts, onCheckout
 
   return (
     <div className="flex flex-col h-full bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
-      {/* Top Header: Staff Assignment */}
-      <div className="p-4 bg-slate-850 border-b border-slate-800 relative z-30">
-        <div className="flex items-center justify-between mb-2">
-          <span className="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center space-x-1.5">
-            <UserCheck className="w-4 h-4 text-amber-400" />
-            <span>Staff Tab Assignment</span>
+      {/* Top Header: Tab Assignment Switcher (Staff vs. Customer Room Bill) */}
+      <div className="p-3.5 bg-slate-850 border-b border-slate-800 relative z-30 space-y-2.5">
+        <div className="flex items-center justify-between">
+          <span className="text-xs font-bold uppercase tracking-wider text-slate-400">
+            Tab / Bill Assignment
           </span>
-          {staffMember && (
+
+          {/* Segmented Switcher */}
+          <div className="flex rounded-lg overflow-hidden border border-slate-700 bg-slate-900 p-0.5">
             <button
               type="button"
-              onClick={() => setStaffMember(null)}
-              className="text-xs text-red-400 hover:text-red-300 transition cursor-pointer"
+              onClick={() => setTabType('STAFF')}
+              className={`px-3 py-1 rounded-md text-xs font-bold transition flex items-center space-x-1.5 cursor-pointer ${
+                tabType === 'STAFF'
+                  ? 'bg-amber-500 text-black shadow-sm'
+                  : 'text-slate-400 hover:text-white'
+              }`}
             >
-              Detach Staff
+              <UserCheck className="w-3.5 h-3.5" />
+              <span>Staff Tab</span>
             </button>
-          )}
+
+            <button
+              type="button"
+              onClick={() => setTabType('ROOM')}
+              className={`px-3 py-1 rounded-md text-xs font-bold transition flex items-center space-x-1.5 cursor-pointer ${
+                tabType === 'ROOM'
+                  ? 'bg-amber-500 text-black shadow-sm'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <BedDouble className="w-3.5 h-3.5" />
+              <span>Room Bill</span>
+            </button>
+          </div>
         </div>
 
-        {/* Searchable Staff Selection */}
-        <StaffSearchSelect
-          staffMembers={staffMembers}
-          selectedStaff={staffMember}
-          onSelectStaff={setStaffMember}
-          placeholder="Search staff name or code..."
-        />
+        {/* Tab Type 1: Staff Tab Search */}
+        {tabType === 'STAFF' && (
+          <div className="space-y-1.5">
+            <StaffSearchSelect
+              staffMembers={staffMembers}
+              selectedStaff={staffMember}
+              onSelectStaff={setStaffMember}
+              placeholder="Search staff name or code..."
+            />
+            {staffMember && (
+              <div className="text-[11px] text-amber-400/90 font-medium bg-amber-500/10 px-2.5 py-1.5 rounded-lg border border-amber-500/20 flex items-center justify-between">
+                <span>Tab active for: <strong>{staffMember.fullName}</strong> ({staffMember.employeeCode})</span>
+                <button
+                  type="button"
+                  onClick={() => setStaffMember(null)}
+                  className="text-red-400 hover:text-red-300 text-xs cursor-pointer ml-2"
+                >
+                  Detach
+                </button>
+              </div>
+            )}
+          </div>
+        )}
 
-        {staffMember && (
-          <div className="mt-2 text-[11px] text-amber-400/90 font-medium bg-amber-500/10 px-2.5 py-1.5 rounded-lg border border-amber-500/20 flex items-center justify-between">
-            <span>Tab active for: <strong>{staffMember.fullName}</strong> ({staffMember.employeeCode})</span>
+        {/* Tab Type 2: Customer Room Bill Selector */}
+        {tabType === 'ROOM' && (
+          <div className="space-y-1.5">
+            <RoomSearchSelect
+              selectedRoomNumber={selectedRoomNumber}
+              onSelectRoom={setSelectedRoomNumber}
+              guestName={guestName}
+              onChangeGuestName={setGuestName}
+            />
+            {selectedRoomNumber && (
+              <div className="text-[11px] text-amber-400 font-medium bg-amber-500/10 px-2.5 py-1.5 rounded-lg border border-amber-500/20 flex items-center justify-between">
+                <span>
+                  Bill for Room: <strong className="font-mono text-white">{selectedRoomNumber}</strong>
+                  {guestName && <span> ({guestName})</span>}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedRoomNumber('');
+                    setGuestName('');
+                  }}
+                  className="text-red-400 hover:text-red-300 text-xs cursor-pointer ml-2"
+                >
+                  Detach
+                </button>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -397,19 +515,27 @@ export default function ActiveTicket({ staffMembers, presetDiscounts, onCheckout
 
       {/* Action Buttons Triggering Confirmation Modal */}
       <div className="p-4 bg-slate-900 border-t border-slate-800 grid grid-cols-2 gap-2">
-        {/* Hold Tab Button (Full Width if Staff Attached) */}
+        {/* Hold Tab Button (Dynamic to Staff or Room Bill) */}
         <button
           type="button"
           disabled={checkoutLoading || items.length === 0}
           onClick={() => initiateCheckout('UNPAID_TAB', 'TAB_DEFERRED')}
           className={`col-span-2 py-3 px-4 rounded-xl font-bold text-sm flex items-center justify-center space-x-2 transition shadow-lg cursor-pointer ${
-            staffMember
+            (tabType === 'STAFF' && staffMember) || (tabType === 'ROOM' && selectedRoomNumber)
               ? 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white shadow-blue-500/20 active:scale-[0.99]'
-              : 'bg-slate-800 text-slate-500 cursor-not-allowed border border-slate-700'
+              : 'bg-slate-800 text-slate-300 hover:bg-slate-750 border border-slate-700'
           }`}
         >
           <Clock className="w-4 h-4" />
-          <span>HOLD AS STAFF TAB</span>
+          <span>
+            {tabType === 'ROOM'
+              ? (selectedRoomNumber 
+                  ? `HOLD AS ROOM BILL (${selectedRoomNumber}${guestName ? ` - ${guestName}` : ''})`
+                  : 'HOLD AS ROOM BILL')
+              : (staffMember
+                  ? `HOLD AS STAFF TAB (${staffMember.fullName})`
+                  : 'HOLD AS STAFF TAB')}
+          </span>
         </button>
 
         {/* Immediate Cash Checkout */}
@@ -435,19 +561,19 @@ export default function ActiveTicket({ staffMembers, presetDiscounts, onCheckout
         </button>
       </div>
 
-      {/* Checkout Confirmation Modal with Cashier Notes */}
+      {/* Prominent High-Visibility Checkout Confirmation Modal */}
       {pendingCheckout && (
-        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150">
-          <div className="bg-slate-900 border border-slate-700 rounded-2xl max-w-md w-full p-5 sm:p-6 space-y-4 shadow-2xl animate-in zoom-in-95">
+        <div className="fixed inset-0 z-[100] bg-black/85 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-150">
+          <div className="bg-slate-900 border border-slate-700 rounded-3xl max-w-lg w-full p-6 space-y-4 shadow-2xl animate-in zoom-in-95 max-h-[92vh] overflow-y-auto">
             {/* Modal Header */}
             <div className="flex items-center justify-between pb-3 border-b border-slate-800">
               <div className="flex items-center space-x-2.5">
-                <div className="w-9 h-9 rounded-xl bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-amber-400">
+                <div className="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-amber-400">
                   <Receipt className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="text-base font-bold text-white">Confirm Transaction</h3>
-                  <p className="text-xs text-slate-400">Review checkout details and add notes</p>
+                  <h3 className="text-lg font-bold text-white">Confirm Transaction & Settlement</h3>
+                  <p className="text-xs text-slate-400">Review checkout details and enter cashier notes</p>
                 </div>
               </div>
               <button
@@ -455,42 +581,69 @@ export default function ActiveTicket({ staffMembers, presetDiscounts, onCheckout
                 onClick={() => setPendingCheckout(null)}
                 className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 cursor-pointer"
               >
-                <X className="w-4 h-4" />
+                <X className="w-5 h-5" />
               </button>
             </div>
 
-            {/* Payment & Order Summary Card */}
-            <div className="p-3.5 bg-slate-850 rounded-xl border border-slate-800 space-y-2 text-xs">
+            {/* Settlement Target Card */}
+            <div className="p-4 bg-slate-850 rounded-2xl border border-slate-800 space-y-2.5 text-xs">
               <div className="flex justify-between items-center">
-                <span className="text-slate-400">Settlement Action:</span>
-                <span className={`font-bold px-2 py-0.5 rounded text-[11px] ${
+                <span className="text-slate-400 font-semibold">Settlement Action:</span>
+                <span className={`font-bold px-2.5 py-1 rounded-md text-xs ${
                   pendingCheckout.status === 'UNPAID_TAB'
-                    ? 'bg-blue-950 text-blue-300 border border-blue-800'
+                    ? (tabType === 'ROOM'
+                        ? 'bg-purple-950 text-purple-300 border border-purple-800'
+                        : 'bg-blue-950 text-blue-300 border border-blue-800')
                     : pendingCheckout.paymentMethod === 'CASH'
                     ? 'bg-emerald-950 text-emerald-300 border border-emerald-800'
                     : 'bg-amber-950 text-amber-300 border border-amber-800'
                 }`}>
                   {pendingCheckout.status === 'UNPAID_TAB'
-                    ? `Staff Tab (${staffMember?.fullName || 'Assigned'})`
+                    ? (tabType === 'ROOM'
+                        ? `Room Bill (${selectedRoomNumber}${guestName ? ` - ${guestName}` : ''})`
+                        : `Staff Tab (${staffMember?.fullName || 'Assigned'})`)
                     : `${pendingCheckout.paymentMethod} Payment`}
                 </span>
               </div>
 
-              {staffMember && (
-                <div className="flex justify-between items-center">
+              {pendingCheckout.status === 'UNPAID_TAB' && tabType === 'ROOM' && (
+                <div className="flex justify-between items-center pt-1 border-t border-slate-800/80">
+                  <span className="text-slate-400">Attached Room:</span>
+                  <span className="font-mono font-bold text-amber-400 text-sm">
+                    {selectedRoomNumber} {guestName ? `(${guestName})` : ''}
+                  </span>
+                </div>
+              )}
+
+              {pendingCheckout.status === 'UNPAID_TAB' && tabType === 'STAFF' && staffMember && (
+                <div className="flex justify-between items-center pt-1 border-t border-slate-800/80">
                   <span className="text-slate-400">Attached Staff:</span>
                   <span className="font-semibold text-amber-300">{staffMember.fullName} ({staffMember.employeeCode})</span>
                 </div>
               )}
 
-              <div className="flex justify-between items-center">
-                <span className="text-slate-400">Line Items:</span>
-                <span className="font-semibold text-white">{totals.itemCount} items</span>
+              {/* Line Items Preview */}
+              <div className="pt-2 border-t border-slate-800/80 space-y-1">
+                <div className="text-[11px] font-bold uppercase text-slate-400 tracking-wider">
+                  Order Summary ({totals.itemCount} items)
+                </div>
+                <div className="max-h-28 overflow-y-auto space-y-1 pr-1">
+                  {items.map((it) => (
+                    <div key={it.productId} className="flex justify-between items-center text-[11px]">
+                      <span className="text-slate-300 truncate max-w-[240px]">
+                        {it.quantity}x {it.productNameSnapshot}
+                      </span>
+                      <span className="font-mono text-white font-semibold">
+                        {formatCurrency(it.finalLineTotalInCents, currency)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
               </div>
 
-              <div className="flex justify-between items-center pt-2 border-t border-slate-700/80 text-sm">
+              <div className="flex justify-between items-center pt-2.5 border-t border-slate-750 text-sm">
                 <span className="font-bold text-white">Grand Total Due:</span>
-                <span className="font-black text-amber-400 text-base">
+                <span className="font-black text-amber-400 text-lg font-mono">
                   {formatCurrency(totals.grandTotalInCents, currency)}
                 </span>
               </div>
@@ -498,7 +651,7 @@ export default function ActiveTicket({ staffMembers, presetDiscounts, onCheckout
 
             {/* Cashier Notes Input */}
             <div>
-              <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1.5 flex items-center space-x-1.5">
+              <label className="block text-xs font-bold uppercase tracking-wider text-slate-300 mb-1.5 flex items-center space-x-1.5">
                 <FileText className="w-3.5 h-3.5 text-amber-400" />
                 <span>Cashier Notes / Order Instructions (Optional)</span>
               </label>
@@ -506,38 +659,60 @@ export default function ActiveTicket({ staffMembers, presetDiscounts, onCheckout
                 value={checkoutNotes}
                 onChange={(e) => setCheckoutNotes(e.target.value)}
                 rows={2}
-                placeholder="e.g. Table 4, takeaway, extra hot, customer promo note..."
-                className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-white text-xs sm:text-sm placeholder-slate-500 focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                placeholder="e.g. Table 4, takeaway, extra hot, customer request note..."
+                className="w-full px-3 py-2.5 bg-slate-800 border border-slate-700 rounded-xl text-white text-xs sm:text-sm placeholder-slate-500 focus:ring-2 focus:ring-amber-500 focus:outline-none"
               />
             </div>
 
             {/* Action Buttons */}
-            <div className="grid grid-cols-2 gap-2.5 pt-1">
+            <div className="grid grid-cols-2 gap-3 pt-2">
               <button
                 type="button"
                 disabled={checkoutLoading}
                 onClick={() => setPendingCheckout(null)}
-                className="py-2.5 px-4 rounded-xl border border-slate-700 bg-slate-800 hover:bg-slate-750 text-slate-300 font-bold text-xs sm:text-sm transition cursor-pointer"
+                className="py-3 px-4 rounded-xl border border-slate-700 bg-slate-800 hover:bg-slate-750 text-slate-300 font-bold text-xs sm:text-sm transition cursor-pointer"
               >
-                Cancel / Back
+                Cancel / Modify Ticket
               </button>
               <button
                 type="button"
                 disabled={checkoutLoading}
                 onClick={confirmAndExecuteCheckout}
-                className="py-2.5 px-4 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-extrabold text-xs sm:text-sm transition shadow-lg shadow-amber-500/20 active:scale-95 cursor-pointer flex items-center justify-center space-x-1.5"
+                className="py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs sm:text-sm transition shadow-lg shadow-emerald-600/20 active:scale-95 cursor-pointer flex items-center justify-center space-x-1.5"
               >
-                {checkoutLoading ? 'Processing...' : `Confirm & Settle`}
+                {checkoutLoading ? 'Finalizing...' : `Confirm & Finalize`}
               </button>
             </div>
           </div>
         </div>
       )}
 
+      {/* Prominent Floating Alert Modal */}
+      {alertModal && (
+        <div className="fixed inset-0 z-[110] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-slate-900 border border-amber-500/60 rounded-3xl max-w-sm w-full p-6 space-y-4 shadow-2xl text-center animate-in zoom-in-95">
+            <div className="w-12 h-12 rounded-full bg-amber-500/20 text-amber-400 border border-amber-500/30 flex items-center justify-center mx-auto">
+              <AlertTriangle className="w-6 h-6" />
+            </div>
+            <div>
+              <h3 className="text-lg font-black text-white">{alertModal.title}</h3>
+              <p className="text-xs text-slate-300 mt-2 leading-relaxed">{alertModal.message}</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setAlertModal(null)}
+              className="w-full py-2.5 bg-amber-500 hover:bg-amber-400 text-black font-bold text-xs rounded-xl shadow-lg shadow-amber-500/20 transition cursor-pointer"
+            >
+              Understood
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Success Modal / Receipt */}
       {successReceipt && (
-        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-sm w-full p-6 text-center space-y-4 shadow-2xl animate-in fade-in zoom-in-95">
+        <div className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl max-w-sm w-full p-6 text-center space-y-4 shadow-2xl animate-in zoom-in-95">
             <div className="w-14 h-14 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center mx-auto">
               <CheckCircle2 className="w-8 h-8" />
             </div>
@@ -549,35 +724,47 @@ export default function ActiveTicket({ staffMembers, presetDiscounts, onCheckout
               </p>
             </div>
 
-            <div className="p-3 bg-slate-800/80 rounded-xl text-xs space-y-1.5 text-slate-300">
+            <div className="p-3 bg-slate-850 rounded-2xl text-xs space-y-2 text-slate-300 border border-slate-800">
               <div className="flex justify-between">
                 <span>Status:</span>
                 <span className={`font-bold ${successReceipt.status === 'PAID' ? 'text-emerald-400' : 'text-blue-400'}`}>
                   {successReceipt.status === 'PAID' ? 'PAID' : 'UNPAID TAB'}
                 </span>
               </div>
+
+              {successReceipt.roomNumber && (
+                <div className="flex justify-between">
+                  <span>Room Bill:</span>
+                  <span className="font-mono font-bold text-amber-400">
+                    {successReceipt.roomNumber} {successReceipt.guestName ? `(${successReceipt.guestName})` : ''}
+                  </span>
+                </div>
+              )}
+
               {successReceipt.staffNameSnapshot && (
                 <div className="flex justify-between">
                   <span>Staff Member:</span>
                   <span className="font-semibold text-white">{successReceipt.staffNameSnapshot}</span>
                 </div>
               )}
+
               {successReceipt.notes && (
                 <div className="flex justify-between text-left">
                   <span>Notes:</span>
                   <span className="font-medium text-amber-300/90 italic truncate max-w-[180px]">{successReceipt.notes}</span>
                 </div>
               )}
-              <div className="flex justify-between font-bold text-sm text-white pt-1 border-t border-slate-700">
-                <span>Total:</span>
-                <span>{formatCurrency(successReceipt.grandTotalInCents, currency)}</span>
+
+              <div className="flex justify-between font-bold text-sm text-white pt-2 border-t border-slate-750">
+                <span>Total Settled:</span>
+                <span className="font-mono text-amber-400">{formatCurrency(successReceipt.grandTotalInCents, currency)}</span>
               </div>
             </div>
 
             <button
               type="button"
               onClick={() => setSuccessReceipt(null)}
-              className="w-full py-2.5 bg-amber-500 hover:bg-amber-400 text-black font-bold text-sm rounded-xl transition cursor-pointer"
+              className="w-full py-3 bg-amber-500 hover:bg-amber-400 text-black font-bold text-sm rounded-xl transition cursor-pointer shadow-lg shadow-amber-500/20"
             >
               New Ticket (Ready)
             </button>
