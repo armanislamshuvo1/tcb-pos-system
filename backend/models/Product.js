@@ -41,6 +41,16 @@ const productSchema = new mongoose.Schema({
     type: Number, 
     default: 0 
   },
+  discountType: {
+    type: String,
+    enum: ['none', 'percentage', 'fixed_cents'],
+    default: 'none'
+  },
+  discountValue: {
+    type: Number,
+    default: 0,
+    min: 0
+  },
   isActive: { 
     type: Boolean, 
     default: true 
