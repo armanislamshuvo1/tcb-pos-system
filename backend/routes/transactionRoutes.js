@@ -5,5 +5,6 @@ const { authenticateToken } = require('../middleware/authMiddleware');
 
 router.post('/', authenticateToken, transactionController.createTransaction);
 router.get('/ledger', authenticateToken, transactionController.getLedger);
+router.get('/:id', authenticateToken, transactionController.getTransactionById);
 
 module.exports = router;
