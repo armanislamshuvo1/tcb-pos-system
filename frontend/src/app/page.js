@@ -6,6 +6,8 @@ import CategoryTabs from '../components/pos/CategoryTabs';
 import SearchBar from '../components/pos/SearchBar';
 import ProductGrid from '../components/pos/ProductGrid';
 import ActiveTicket from '../components/pos/ActiveTicket';
+import Link from 'next/link';
+import { Monitor, Smartphone, AlertTriangle } from 'lucide-react';
 import { useAxiosSecure } from '../hooks/useApi';
 import { useCartStore } from '../store/useCartStore';
 import { offlineDb } from '../utils/offlineDb';
@@ -89,7 +91,7 @@ export default function PosPage() {
   }, [products, activeCategoryId, searchTerm]);
 
   // Checkout API call
-  const handleCheckout = async ({ status, paymentMethod, staffMemberId }) => {
+  const handleCheckout = async ({ status, paymentMethod, staffMemberId, notes: customNotes }) => {
     const idempotencyKey = `pos_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
 
     const payload = {
@@ -107,7 +109,7 @@ export default function PosPage() {
       status,
       paymentMethod,
       staffMemberId,
-      notes
+      notes: customNotes !== undefined ? customNotes : notes
     };
 
     try {
@@ -144,9 +146,59 @@ export default function PosPage() {
     <div className="min-h-screen bg-slate-950 text-white flex flex-col">
       <Header />
 
-      <main className="flex-1 max-w-7xl w-full mx-auto p-3 sm:p-4 grid grid-cols-1 lg:grid-cols-12 gap-4">
-        {/* Left Column: Product Catalog & Search (7 Cols) */}
-        <div className="lg:col-span-7 flex flex-col space-y-3">
+      {/* Mobile Device Notice - Displayed only on screens smaller than tablet (< md / 768px) */}
+      <div className="block md:hidden flex-1 p-4 flex flex-col items-center justify-center text-center">
+        <div className="max-w-md w-full bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-5">
+          <div className="w-16 h-16 mx-auto rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400">
+            <Monitor className="w-8 h-8" />
+          </div>
+
+          <div className="space-y-2">
+            <div className="inline-flex items-center space-x-1.5 px-3 py-1 rounded-full text-[11px] font-bold uppercase tracking-wider bg-amber-500/15 text-amber-300 border border-amber-500/30">
+              <AlertTriangle className="w-3.5 h-3.5" />
+              <span>Tablet & PC Recommended</span>
+            </div>
+            <h2 className="text-xl font-extrabold text-white">
+              POS System Not Suitable for Mobile
+            </h2>
+            <p className="text-slate-400 text-xs sm:text-sm leading-relaxed">
+              This Point-of-Sale terminal is designed for touch tablets (e.g. iPad) and PC displays to show the product catalog and active cart side-by-side. Phone screens cannot safely accommodate fast checkout operations.
+            </p>
+          </div>
+
+          <div className="p-3.5 rounded-2xl bg-slate-850 border border-slate-800 text-left space-y-2">
+            <div className="text-xs font-bold text-slate-300 flex items-center space-x-2">
+              <Smartphone className="w-4 h-4 text-amber-400" />
+              <span>Instructions for Staff:</span>
+            </div>
+            <ul className="text-xs text-slate-400 space-y-1 list-disc list-inside">
+              <li>Open this terminal on a POS tablet or desktop computer</li>
+              <li>If already on a tablet, rotate your screen to <strong>Landscape mode</strong></li>
+            </ul>
+          </div>
+
+          {/* Quick Mobile Navigation Links */}
+          <div className="pt-2 space-y-2">
+            <Link
+              href="/tabs"
+              className="w-full flex items-center justify-center space-x-2 py-2.5 px-4 rounded-xl bg-slate-800 hover:bg-slate-750 border border-slate-700 text-slate-200 text-xs font-bold transition"
+            >
+              <span>Go to Staff Tab Management</span>
+            </Link>
+            <Link
+              href="/ledger"
+              className="w-full flex items-center justify-center space-x-2 py-2.5 px-4 rounded-xl bg-slate-800 hover:bg-slate-750 border border-slate-700 text-slate-200 text-xs font-bold transition"
+            >
+              <span>Go to Transaction Ledger</span>
+            </Link>
+          </div>
+        </div>
+      </div>
+
+      {/* Side-by-Side Layout for Tablet and PC (md breakpoint and up) */}
+      <main className="hidden md:flex flex-1 w-full max-w-[1750px] mx-auto p-3 sm:p-4 gap-3 sm:gap-4 h-[calc(100vh-3.75rem)] overflow-hidden">
+        {/* Left Column: Product Catalog & Search (Products on the left) */}
+        <div className="w-7/12 lg:w-7/12 xl:w-3/5 flex flex-col h-full overflow-hidden space-y-2.5 sm:space-y-3">
           {/* Quick Search */}
           <SearchBar searchTerm={searchTerm} onSearchChange={setSearchTerm} />
 
@@ -169,8 +221,8 @@ export default function PosPage() {
           </div>
         </div>
 
-        {/* Right Column: Active Ticket & Checkout (5 Cols) */}
-        <div className="lg:col-span-5 h-[calc(100vh-6rem)] sticky top-20">
+        {/* Right Column: Active Ticket & Checkout (Cart on the right) */}
+        <div className="w-5/12 lg:w-5/12 xl:w-2/5 h-full overflow-hidden">
           <ActiveTicket
             staffMembers={staffMembers}
             presetDiscounts={presetDiscounts}
