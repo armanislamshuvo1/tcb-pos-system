@@ -56,6 +56,7 @@ export const useCartStore = create((set, get) => ({
       }
 
       const initialQty = 1;
+      // Do not auto-apply discount; cashier selects by themselves
       const financials = calculateLineFinancials(product.priceInCents, initialQty, 'none', 0);
 
       const newItem = {
@@ -67,6 +68,9 @@ export const useCartStore = create((set, get) => ({
         quantity: initialQty,
         lineDiscountType: 'none',
         lineDiscountValue: 0,
+        // Retain configured product discount metadata for selection in cart
+        productDiscountType: product.discountType || 'none',
+        productDiscountValue: Number(product.discountValue) || 0,
         ...financials
       };
 
