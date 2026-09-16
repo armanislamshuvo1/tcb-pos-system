@@ -23,6 +23,7 @@ export default function LoginScreen() {
 
   const brandName = company?.branding?.displayName || 'PoS System';
   const brandLogo = company?.branding?.logoText || 'P';
+  const brandLogoImg = company?.branding?.logoUrl || '/high-resolution-color-logo.png';
 
   // Physical keyboard listener
   useEffect(() => {
@@ -107,9 +108,22 @@ export default function LoginScreen() {
           {/* Left Column: Branding, Operator Input & Alerts */}
           <div className="space-y-4 pb-4 md:pb-0 md:border-r md:border-slate-800 md:pr-8">
             {/* Brand Header */}
-            <div className="flex items-center space-x-3">
-              <div className="w-12 h-12 rounded-2xl bg-amber-500 flex items-center justify-center font-black text-black text-2xl shadow-xl shadow-amber-500/20 uppercase">
-                {brandLogo}
+            <div className="flex items-center space-x-3.5">
+              <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl overflow-hidden border border-slate-700/80 bg-slate-900 shadow-xl shadow-amber-500/10 flex items-center justify-center shrink-0">
+                <img
+                  src={brandLogoImg}
+                  alt={brandName}
+                  className="w-full h-full object-cover"
+                  onError={(e) => {
+                    e.currentTarget.style.display = 'none';
+                    if (e.currentTarget.nextElementSibling) {
+                      e.currentTarget.nextElementSibling.style.display = 'flex';
+                    }
+                  }}
+                />
+                <div style={{ display: 'none' }} className="w-full h-full bg-amber-500 items-center justify-center font-black text-black text-2xl uppercase">
+                  {brandLogo}
+                </div>
               </div>
               <div>
                 <h1 className="text-xl font-black tracking-tight bg-gradient-to-r from-amber-400 to-orange-400 bg-clip-text text-transparent">

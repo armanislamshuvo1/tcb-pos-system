@@ -33,6 +33,7 @@ export default function Header() {
 
   const brandName = company?.branding?.displayName || 'PoS System';
   const brandLogo = company?.branding?.logoText || 'P';
+  const brandLogoImg = company?.branding?.logoUrl || '/high-resolution-color-logo.png';
   const isSystemAdmin = role === 'system_admin';
   const isAdmin = role === 'admin' || isSystemAdmin;
 
@@ -91,9 +92,22 @@ export default function Header() {
                 <span className="hidden sm:inline font-semibold">Menu</span>
               </button>
 
-              <Link href="/" className="flex items-center space-x-2">
-                <div className="w-8 h-8 rounded-lg bg-amber-500 flex items-center justify-center font-bold text-black text-lg shadow-md uppercase">
-                  {brandLogo}
+              <Link href="/" className="flex items-center space-x-2.5">
+                <div className="w-8 h-8 rounded-lg overflow-hidden bg-slate-800 border border-slate-700/80 flex items-center justify-center shadow-md shrink-0">
+                  <img
+                    src={brandLogoImg}
+                    alt={brandName}
+                    className="w-full h-full object-cover"
+                    onError={(e) => {
+                      e.currentTarget.style.display = 'none';
+                      if (e.currentTarget.nextElementSibling) {
+                        e.currentTarget.nextElementSibling.style.display = 'flex';
+                      }
+                    }}
+                  />
+                  <div style={{ display: 'none' }} className="w-full h-full bg-amber-500 items-center justify-center font-bold text-black text-sm uppercase">
+                    {brandLogo}
+                  </div>
                 </div>
                 <div>
                   <span className="font-extrabold text-base sm:text-lg tracking-tight bg-gradient-to-r from-amber-400 to-orange-400 bg-clip-text text-transparent">
@@ -183,8 +197,21 @@ export default function Header() {
             {/* Top Bar of Drawer */}
             <div className="p-4 border-b border-slate-800 flex items-center justify-between">
               <div className="flex items-center space-x-2.5">
-                <div className="w-8 h-8 rounded-lg bg-amber-500 flex items-center justify-center font-bold text-black text-lg shadow-md uppercase">
-                  {brandLogo}
+                <div className="w-8 h-8 rounded-lg overflow-hidden bg-slate-800 border border-slate-700/80 flex items-center justify-center shadow-md shrink-0">
+                  <img
+                    src={brandLogoImg}
+                    alt={brandName}
+                    className="w-full h-full object-cover"
+                    onError={(e) => {
+                      e.currentTarget.style.display = 'none';
+                      if (e.currentTarget.nextElementSibling) {
+                        e.currentTarget.nextElementSibling.style.display = 'flex';
+                      }
+                    }}
+                  />
+                  <div style={{ display: 'none' }} className="w-full h-full bg-amber-500 items-center justify-center font-bold text-black text-sm uppercase">
+                    {brandLogo}
+                  </div>
                 </div>
                 <div>
                   <span className="font-extrabold text-base tracking-tight bg-gradient-to-r from-amber-400 to-orange-400 bg-clip-text text-transparent">
