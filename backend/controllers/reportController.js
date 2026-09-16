@@ -31,21 +31,31 @@ exports.getSalesSummary = async (req, res, next) => {
           unpaidTransactions: {
             $sum: { $cond: [{ $eq: ['$status', 'UNPAID_TAB'] }, 1, 0] }
           },
-          grossSubtotalInCents: { $sum: '$subtotalInCents' },
-          totalDiscountInCents: { $sum: '$totalDiscountInCents' },
+          voidedTransactions: {
+            $sum: { $cond: [{ $eq: ['$status', 'VOIDED'] }, 1, 0] }
+          },
+          grossSubtotalInCents: {
+            $sum: { $cond: [{ $ne: ['$status', 'VOIDED'] }, '$subtotalInCents', 0] }
+          },
+          totalDiscountInCents: {
+            $sum: { $cond: [{ $ne: ['$status', 'VOIDED'] }, '$totalDiscountInCents', 0] }
+          },
           netPaidRevenueInCents: {
             $sum: { $cond: [{ $eq: ['$status', 'PAID'] }, '$grandTotalInCents', 0] }
           },
           outstandingTabLiabilityInCents: {
             $sum: { $cond: [{ $eq: ['$status', 'UNPAID_TAB'] }, '$grandTotalInCents', 0] }
+          },
+          voidedAmountInCents: {
+            $sum: { $cond: [{ $eq: ['$status', 'VOIDED'] }, '$grandTotalInCents', 0] }
           }
         }
       }
     ]);
 
-    // Payment method distribution
+    // Payment method distribution (excluding voided)
     const paymentBreakdown = await Transaction.aggregate([
-      { $match: matchStage },
+      { $match: { ...matchStage, status: { $ne: 'VOIDED' } } },
       {
         $group: {
           _id: '$paymentMethod',
@@ -81,7 +91,7 @@ exports.getSalesSummary = async (req, res, next) => {
 exports.getStaffConsumption = async (req, res, next) => {
   try {
     const { staffId, startDate, endDate } = req.query;
-    const matchStage = { staffMemberId: { $ne: null } };
+    const matchStage = { staffMemberId: { $ne: null }, status: { $ne: 'VOIDED' } };
 
     if (staffId) {
       matchStage.staffMemberId = new mongoose.Types.ObjectId(staffId);
@@ -131,7 +141,7 @@ exports.getStaffConsumption = async (req, res, next) => {
 exports.getProductReport = async (req, res, next) => {
   try {
     const { startDate, endDate, categoryId } = req.query;
-    const matchStage = {};
+    const matchStage = { status: { $ne: 'VOIDED' } };
 
     if (startDate || endDate) {
       matchStage.createdAt = {};

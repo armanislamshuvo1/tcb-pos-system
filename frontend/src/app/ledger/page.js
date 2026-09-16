@@ -16,7 +16,8 @@ import {
   ChevronLeft, 
   ChevronRight,
   TrendingDown,
-  Eye
+  Eye,
+  Ban
 } from 'lucide-react';
 
 export default function LedgerPage() {
@@ -99,7 +100,7 @@ export default function LedgerPage() {
           </div>
 
           {/* Quick Status Toggles */}
-          <div className="flex items-center space-x-2 bg-slate-900 p-1 rounded-xl border border-slate-800">
+          <div className="flex items-center space-x-2 bg-slate-900 p-1 rounded-xl border border-slate-800 flex-wrap gap-y-1">
             <button
               onClick={() => { setStatusFilter('ALL'); setPage(1); }}
               className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition ${
@@ -124,28 +125,36 @@ export default function LedgerPage() {
             >
               Unpaid Tabs Only
             </button>
+            <button
+              onClick={() => { setStatusFilter('VOIDED'); setPage(1); }}
+              className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition ${
+                statusFilter === 'VOIDED' ? 'bg-rose-600 text-white shadow-md' : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              Voided Only
+            </button>
           </div>
         </div>
 
         {/* Financial Summary Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <div className="p-4 bg-slate-900 border border-slate-800 rounded-2xl">
             <div className="flex items-center justify-between text-xs text-slate-400 font-semibold mb-1">
               <span>Settled Revenue</span>
               <DollarSign className="w-4 h-4 text-emerald-400" />
             </div>
             <div className="text-2xl font-black text-emerald-400 font-mono">
-              {formatCurrency(summary.totalRevenueInCents, currency)}
+              {formatCurrency(summary.totalRevenueInCents || 0, currency)}
             </div>
           </div>
 
           <div className="p-4 bg-slate-900 border border-slate-800 rounded-2xl">
             <div className="flex items-center justify-between text-xs text-slate-400 font-semibold mb-1">
-              <span>Outstanding Tab Liabilities</span>
+              <span>Outstanding Tabs</span>
               <Clock className="w-4 h-4 text-blue-400" />
             </div>
             <div className="text-2xl font-black text-blue-400 font-mono">
-              {formatCurrency(summary.totalUnpaidInCents, currency)}
+              {formatCurrency(summary.totalUnpaidInCents || 0, currency)}
             </div>
           </div>
 
@@ -155,7 +164,17 @@ export default function LedgerPage() {
               <TrendingDown className="w-4 h-4 text-amber-400" />
             </div>
             <div className="text-2xl font-black text-amber-400 font-mono">
-              {formatCurrency(summary.totalDiscountInCents, currency)}
+              {formatCurrency(summary.totalDiscountInCents || 0, currency)}
+            </div>
+          </div>
+
+          <div className="p-4 bg-slate-900 border border-slate-800 rounded-2xl">
+            <div className="flex items-center justify-between text-xs text-slate-400 font-semibold mb-1">
+              <span>Voided / Cancelled</span>
+              <Ban className="w-4 h-4 text-rose-400" />
+            </div>
+            <div className="text-2xl font-black text-rose-400 font-mono">
+              {formatCurrency(summary.totalVoidedInCents || 0, currency)}
             </div>
           </div>
         </div>
@@ -274,10 +293,22 @@ export default function LedgerPage() {
                         <span className={`text-xs font-bold px-2.5 py-0.5 rounded-full border ${
                           txn.status === 'PAID'
                             ? 'bg-emerald-950/80 text-emerald-400 border-emerald-800'
-                            : 'bg-blue-950/80 text-blue-400 border-blue-800'
+                            : txn.status === 'UNPAID_TAB'
+                            ? 'bg-blue-950/80 text-blue-400 border-blue-800'
+                            : 'bg-rose-950/80 text-rose-400 border-rose-800'
                         }`}>
                           {txn.status}
                         </span>
+                        {txn.status === 'VOIDED' && (
+                          <div className="mt-1 flex flex-col space-y-0.5">
+                            <span className="text-[11px] text-rose-300 font-semibold truncate max-w-[180px]" title={txn.voidReason}>
+                              &ldquo;{txn.voidReason || 'No reason specified'}&rdquo;
+                            </span>
+                            <span className="text-[10px] text-slate-400">
+                              By: <strong className="text-slate-300">{txn.voidedByStaffName || 'Staff'}</strong>
+                            </span>
+                          </div>
+                        )}
                       </td>
                       <td className="py-3.5 px-4 text-xs text-slate-400">
                         {formattedDate}
@@ -315,8 +346,10 @@ export default function LedgerPage() {
                       <td className="py-3.5 px-4 text-xs text-slate-300">
                         {txn.items?.length || 0} items
                       </td>
-                      <td className="py-3.5 px-4 font-mono font-bold text-white text-right">
-                        {formatCurrency(txn.grandTotalInCents, currency)}
+                      <td className="py-3.5 px-4 font-mono font-bold text-right">
+                        <span className={txn.status === 'VOIDED' ? 'line-through text-rose-400 font-medium' : 'text-white'}>
+                          {formatCurrency(txn.grandTotalInCents, currency)}
+                        </span>
                       </td>
                     </tr>
                   );
@@ -356,6 +389,10 @@ export default function LedgerPage() {
           <TransactionDetailModal
             txn={selectedTxn}
             onClose={() => setSelectedTxn(null)}
+            onTxnUpdated={(updated) => {
+              setSelectedTxn(updated);
+              fetchLedger();
+            }}
           />
         )}
       </main>

@@ -114,6 +114,12 @@ const transactionSchema = new mongoose.Schema({
     symbol: { type: String, default: 'RM' }
   },
 
+  // Void / Cancellation Audit Tracking
+  voidedAt: { type: Date },
+  voidedByUserId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  voidedByStaffName: { type: String },
+  voidReason: { type: String, trim: true },
+
   notes: { type: String }
 }, { timestamps: true });
 

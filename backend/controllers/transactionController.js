@@ -232,8 +232,8 @@ exports.getLedger = async (req, res, next) => {
         end.setHours(23, 59, 59, 999);
         filter.createdAt.$lte = end;
       }
-    } else if (status !== 'UNPAID_TAB') {
-      // Default to today's transactions unless querying unpaid tabs
+    } else if (status !== 'UNPAID_TAB' && status !== 'VOIDED' && status !== 'ALL') {
+      // Default to today's transactions unless querying unpaid tabs or specific filters
       const todayStart = new Date();
       todayStart.setHours(0, 0, 0, 0);
       filter.createdAt = { $gte: todayStart };
@@ -262,6 +262,8 @@ exports.getLedger = async (req, res, next) => {
         { txnNumber: searchRegex },
         { staffNameSnapshot: searchRegex },
         { cashierNameSnapshot: searchRegex },
+        { voidedByStaffName: searchRegex },
+        { voidReason: searchRegex },
         { customerName: searchRegex },
         { guestName: searchRegex },
         { roomNumber: searchRegex }
@@ -295,6 +297,16 @@ exports.getLedger = async (req, res, next) => {
               $cond: [{ $eq: ['$status', 'UNPAID_TAB'] }, '$grandTotalInCents', 0]
             }
           },
+          totalVoidedInCents: {
+            $sum: {
+              $cond: [{ $eq: ['$status', 'VOIDED'] }, '$grandTotalInCents', 0]
+            }
+          },
+          voidedCount: {
+            $sum: {
+              $cond: [{ $eq: ['$status', 'VOIDED'] }, 1, 0]
+            }
+          },
           totalDiscountInCents: { $sum: '$totalDiscountInCents' }
         }
       }
@@ -303,6 +315,8 @@ exports.getLedger = async (req, res, next) => {
     const summary = aggregateTotals[0] || {
       totalRevenueInCents: 0,
       totalUnpaidInCents: 0,
+      totalVoidedInCents: 0,
+      voidedCount: 0,
       totalDiscountInCents: 0
     };
 
@@ -348,6 +362,102 @@ exports.getTransactionById = async (req, res, next) => {
     res.status(200).json({
       success: true,
       data: transaction
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Void / Cancel a transaction with PIN confirmation & cancellation reason
+// @route   POST /api/transactions/:id/void
+// @access  Authenticated
+exports.voidTransaction = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { pinCode, reason } = req.body;
+
+    if (!pinCode || !pinCode.toString().trim()) {
+      return res.status(400).json({
+        success: false,
+        message: 'PIN confirmation is required to void a transaction'
+      });
+    }
+
+    if (!reason || !reason.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: 'A reason is required to void or cancel a transaction'
+      });
+    }
+
+    // Verify requesting staff member PIN
+    const currentUser = await User.findById(req.user.mongoId);
+    if (!currentUser) {
+      return res.status(404).json({
+        success: false,
+        message: 'Staff user profile not found'
+      });
+    }
+
+    const isPinValid = await currentUser.comparePin(pinCode.toString().trim());
+    if (!isPinValid) {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid PIN code. Transaction void rejected.'
+      });
+    }
+
+    // Find transaction
+    const filter = {};
+    if (mongoose.Types.ObjectId.isValid(id)) {
+      filter._id = id;
+    } else {
+      filter.txnNumber = id;
+    }
+
+    if (req.user && req.user.role !== 'system_admin' && req.user.companyId) {
+      filter.companyId = req.user.companyId;
+    }
+
+    const transaction = await Transaction.findOne(filter);
+    if (!transaction) {
+      return res.status(404).json({
+        success: false,
+        message: 'Transaction not found'
+      });
+    }
+
+    if (transaction.status === 'VOIDED') {
+      return res.status(400).json({
+        success: false,
+        message: `Transaction ${transaction.txnNumber} is already voided`
+      });
+    }
+
+    // Apply void status and audit trail
+    transaction.status = 'VOIDED';
+    transaction.voidedAt = new Date();
+    transaction.voidedByUserId = currentUser._id;
+    transaction.voidedByStaffName = currentUser.fullName;
+    transaction.voidReason = reason.trim();
+
+    await transaction.save();
+
+    // Broadcast SSE event for other terminals, tabs, and ledger pages
+    broadcastUpdate('transaction_voided', {
+      id: transaction._id,
+      txnNumber: transaction.txnNumber,
+      status: transaction.status,
+      grandTotalInCents: transaction.grandTotalInCents,
+      voidedByStaffName: transaction.voidedByStaffName,
+      voidReason: transaction.voidReason,
+      voidedAt: transaction.voidedAt
+    });
+
+    res.status(200).json({
+      success: true,
+      data: transaction,
+      message: `Transaction ${transaction.txnNumber} voided successfully by ${currentUser.fullName}`
     });
   } catch (error) {
     next(error);

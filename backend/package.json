@@ -8,7 +8,8 @@
     "dev": "nodemon server.js",
     "seed": "node scripts/seed.js",
     "test:backend": "node tests/api_verification.js",
-    "test:security": "node tests/security_and_pin_verification.js"
+    "test:security": "node tests/security_and_pin_verification.js",
+    "test:void": "node tests/void_transaction_verification.js"
   },
   "keywords": [],
   "author": "",

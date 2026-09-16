@@ -29,9 +29,9 @@ exports.calculateCartFinancials = ({ items = [], globalDiscount = null }) => {
 
     return {
       productId: item.productId,
-      productNameSnapshot: item.productNameSnapshot,
-      skuSnapshot: item.skuSnapshot,
-      categoryNameSnapshot: item.categoryNameSnapshot || '',
+      productNameSnapshot: item.productNameSnapshot || item.productName || 'Unknown Product',
+      skuSnapshot: item.skuSnapshot || item.sku || 'SKU-NONE',
+      categoryNameSnapshot: item.categoryNameSnapshot || item.categoryName || '',
       unitPriceInCents: unitPrice,
       quantity,
       lineDiscountType: discountType,
