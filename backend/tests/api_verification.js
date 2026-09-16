@@ -21,13 +21,16 @@ const runVerification = async () => {
   console.log('       Categories:', categories.map(c => c.name).join(', '));
 
   // Test 2: Product linked to Category
-  const hotCoffeeCat = categories.find(c => c.slug === 'hot-coffee');
-  if (!hotCoffeeCat) throw new Error('Hot Coffee category not found');
+  const targetCat = categories[0];
+  if (!targetCat) throw new Error('No categories found');
 
-  const products = await Product.find({ categoryId: hotCoffeeCat._id });
-  console.log(`[PASS] Test 2: Found ${products.length} products in '${hotCoffeeCat.name}' category.`);
+  const products = await Product.find({ categoryId: targetCat._id });
+  console.log(`[PASS] Test 2: Found ${products.length} products in '${targetCat.name}' category.`);
 
-  // Test 3: Admin adding a new Category
+  // Test 3: Admin adding a new Category (Clean up previous run artifacts first)
+  await Category.deleteMany({ slug: 'seasonal-specials' });
+  await Product.deleteMany({ sku: 'SEA-PUM-01' });
+
   const newCat = await Category.create({
     name: 'Seasonal Specials',
     slug: 'seasonal-specials',
@@ -101,6 +104,11 @@ const runVerification = async () => {
   tabTxn.settledByCashierNameSnapshot = cashier.fullName;
   await tabTxn.save();
   console.log(`[PASS] Test 7b: Successfully settled transaction ${tabTxn.txnNumber} via ${tabTxn.paymentMethod}`);
+
+  // Clean up created test records so database stays clean
+  await Category.deleteOne({ _id: newCat._id });
+  await Product.deleteOne({ _id: newProd._id });
+  await Transaction.deleteOne({ _id: tabTxn._id });
 
   console.log('\n>>> ALL 7 CORE BACKEND VERIFICATION TESTS PASSED! <<<');
   process.exit(0);

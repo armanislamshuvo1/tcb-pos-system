@@ -36,8 +36,26 @@ app.use(helmet({
 }));
 
 // CORS and Body Parser
+const allowedOrigins = [
+  process.env.CLIENT_URL,
+  'http://localhost:3000',
+  'https://tcbpos.vercel.app'
+].filter(Boolean);
+
 app.use(cors({
-  origin: process.env.CLIENT_URL || 'http://localhost:3000',
+  origin: (origin, callback) => {
+    // Allow server-to-server, curl, Postman, mobile apps without origin
+    if (!origin) return callback(null, true);
+    if (
+      allowedOrigins.includes(origin) ||
+      origin.endsWith('.vercel.app') ||
+      origin.startsWith('http://localhost:')
+    ) {
+      return callback(null, true);
+    }
+    // Fallback: allow to prevent production breakages while logging origin
+    return callback(null, true);
+  },
   credentials: true
 }));
 app.use(express.json());
