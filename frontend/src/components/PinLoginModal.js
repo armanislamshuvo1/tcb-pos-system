@@ -96,7 +96,8 @@ export default function PinLoginModal({ isOpen, onClose }) {
     setSubmitting(true);
     setErrorMsg('');
 
-    const res = await loginWithPin(employeeCode, pinCode);
+    const deviceId = typeof window !== 'undefined' ? localStorage.getItem('pos_device_id') : null;
+    const res = await loginWithPin(employeeCode, pinCode, deviceId);
 
     setSubmitting(false);
 

@@ -1,5 +1,6 @@
 const User = require('../models/User');
 const Company = require('../models/Company');
+const Terminal = require('../models/Terminal');
 const { admin, isInitialized } = require('../config/firebaseAdmin');
 const jwt = require('jsonwebtoken');
 
@@ -32,7 +33,7 @@ exports.getActiveStaff = async (req, res, next) => {
 // @access  Authenticated
 exports.getCurrentUser = async (req, res, next) => {
   try {
-    const user = await User.findById(req.user.mongoId).select('-__v').lean();
+    const user = await User.findById(req.user.mongoId).select('-__v -pinCode').lean();
     if (!user) {
       return res.status(404).json({ success: false, message: 'User not found' });
     }
@@ -102,7 +103,23 @@ exports.createUser = async (req, res, next) => {
       assignedCompanyId = req.user.companyId;
     }
 
-    const assignedPin = (pinCode && pinCode.trim()) ? pinCode.trim() : (password || '1234');
+    // Cashiers and staff MUST be assigned to a specific company
+    if (assignedRole !== 'system_admin' && !assignedCompanyId) {
+      return res.status(400).json({
+        success: false,
+        message: 'A company must be assigned when creating a cashier or staff member'
+      });
+    }
+
+    // Clean numeric 4-6 digit PIN validation
+    let cleanPin = (pinCode && pinCode.trim()) ? pinCode.trim() : (password && password.trim() ? password.trim() : '1234');
+    if (!/^\d{4,6}$/.test(cleanPin)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Terminal PIN code must be between 4 and 6 numeric digits (e.g. 1234)'
+      });
+    }
+
     let firebaseUid = `local_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
 
     // If Firebase Admin is initialized and password is provided, create Firebase user
@@ -129,7 +146,7 @@ exports.createUser = async (req, res, next) => {
       fullName: fullName.trim(),
       employeeCode: employeeCode.trim().toUpperCase(),
       role: assignedRole,
-      pinCode: assignedPin,
+      pinCode: cleanPin,
       companyId: assignedCompanyId,
       isActive: true
     });
@@ -207,7 +224,14 @@ exports.updateUser = async (req, res, next) => {
     }
 
     if (pinCode && pinCode.trim()) {
-      user.pinCode = pinCode.trim(); // Pre-save hook will hash
+      const cleanPin = pinCode.trim();
+      if (!/^\d{4,6}$/.test(cleanPin)) {
+        return res.status(400).json({
+          success: false,
+          message: 'PIN code must be 4 to 6 numeric digits (e.g. 1234)'
+        });
+      }
+      user.pinCode = cleanPin; // Pre-save hook will hash
     }
 
     await user.save();
@@ -235,6 +259,71 @@ exports.updateUser = async (req, res, next) => {
   }
 };
 
+// @desc    Delete user account
+// @route   DELETE /api/admin/users/:id
+// @access  Admin, System Admin
+exports.deleteUser = async (req, res, next) => {
+  try {
+    const userToDelete = await User.findById(req.params.id);
+    if (!userToDelete) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    // Prevent deleting own account
+    if (userToDelete._id.toString() === req.user.mongoId.toString()) {
+      return res.status(400).json({
+        success: false,
+        message: 'You cannot delete your own account'
+      });
+    }
+
+    const isSystemAdmin = req.user.role === 'system_admin';
+
+    // Tenant boundary: Company Admin can only delete users within their company
+    if (!isSystemAdmin) {
+      if (!userToDelete.companyId || !req.user.companyId || userToDelete.companyId.toString() !== req.user.companyId.toString()) {
+        return res.status(403).json({
+          success: false,
+          message: 'You can only manage and delete users within your own company'
+        });
+      }
+    }
+
+    // Company Admin cannot delete a system_admin
+    if (userToDelete.role === 'system_admin' && !isSystemAdmin) {
+      return res.status(403).json({
+        success: false,
+        message: 'Only system admins can delete system admin accounts'
+      });
+    }
+
+    // Remove user from Company admins array if present
+    if (userToDelete.companyId) {
+      await Company.findByIdAndUpdate(userToDelete.companyId, {
+        $pull: { admins: userToDelete._id }
+      });
+    }
+
+    // Clean up Firebase user if non-local
+    if (isInitialized && userToDelete.firebaseUid && !userToDelete.firebaseUid.startsWith('local_')) {
+      try {
+        await admin.auth().deleteUser(userToDelete.firebaseUid);
+      } catch (fbErr) {
+        // Continue even if Firebase deletion fails
+      }
+    }
+
+    await User.findByIdAndDelete(req.params.id);
+
+    res.status(200).json({
+      success: true,
+      message: `User ${userToDelete.fullName} (${userToDelete.employeeCode}) was successfully deleted`
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 // @desc    Get all users (Cashiers, Admins, Staff, System Admins) for Admin Management
 // @route   GET /api/admin/users
 // @access  Admin, System Admin
@@ -253,7 +342,7 @@ exports.getAllUsers = async (req, res, next) => {
     }
 
     const users = await User.find(query)
-      .select('-__v')
+      .select('-__v -pinCode')
       .populate('companyId', 'name code')
       .sort({ role: 1, fullName: 1 })
       .lean();
@@ -267,12 +356,12 @@ exports.getAllUsers = async (req, res, next) => {
   }
 };
 
-// @desc    Fast POS Employee ID + PIN Code Login
+// @desc    Fast POS Employee ID + PIN Code Login (With Terminal Device ID & Company Binding)
 // @route   POST /api/users/pin-login
 // @access  Public
 exports.pinLogin = async (req, res, next) => {
   try {
-    const { employeeCode, email, identifier, pinCode } = req.body;
+    const { employeeCode, email, identifier, pinCode, deviceId, companyId } = req.body;
     const loginId = (identifier || employeeCode || email || '').trim();
 
     if (!loginId || !pinCode) {
@@ -282,33 +371,73 @@ exports.pinLogin = async (req, res, next) => {
       });
     }
 
-    const user = await User.findOne({
+    // Check if terminal device is bound to a specific company
+    let boundTerminal = null;
+    let targetCompanyId = companyId || null;
+
+    if (deviceId && deviceId.trim()) {
+      boundTerminal = await Terminal.findOne({ deviceId: deviceId.trim(), isActive: true }).populate('companyId');
+      if (boundTerminal && boundTerminal.companyId && boundTerminal.companyId.isActive) {
+        targetCompanyId = boundTerminal.companyId._id;
+      }
+    }
+
+    // Find all active candidate users matching employeeCode or email
+    const candidateQuery = {
       $or: [
         { employeeCode: loginId.toUpperCase() },
         { email: loginId.toLowerCase() }
       ],
       isActive: true
-    });
+    };
 
-    if (!user) {
+    const candidates = await User.find(candidateQuery);
+
+    if (!candidates || candidates.length === 0) {
       return res.status(404).json({
         success: false,
         message: 'No active employee found with this ID or Email'
       });
     }
 
-    const isMatch = await user.comparePin(pinCode.trim());
-    if (!isMatch) {
+    // Match candidate with PIN code
+    let matchedUser = null;
+    for (const candidate of candidates) {
+      const isMatch = await candidate.comparePin(pinCode.trim());
+      if (isMatch) {
+        matchedUser = candidate;
+        break;
+      }
+    }
+
+    if (!matchedUser) {
       return res.status(401).json({
         success: false,
         message: 'Incorrect PIN code'
       });
     }
 
+    // STRICT B2B MULTI-TENANT GUARD: Zero crossover between companies
+    // If the terminal is bound to a specific company, only cashiers/staff of THAT company can log in!
+    // (System admins allowed to bypass for maintenance)
+    if (targetCompanyId && matchedUser.role !== 'system_admin') {
+      const userCompId = matchedUser.companyId ? matchedUser.companyId.toString() : null;
+      if (!userCompId || userCompId !== targetCompanyId.toString()) {
+        const companyName = boundTerminal?.companyId?.name || 'this company';
+        return res.status(403).json({
+          success: false,
+          message: `Access Denied: You belong to another company and cannot operate this register for ${companyName}.`
+        });
+      }
+    }
+
     // Resolve company branding and currency
     let company = null;
-    if (user.companyId) {
-      company = await Company.findById(user.companyId).lean();
+    if (matchedUser.companyId) {
+      company = await Company.findById(matchedUser.companyId).lean();
+    }
+    if (!company && targetCompanyId) {
+      company = await Company.findById(targetCompanyId).lean();
     }
     if (!company) {
       company = await Company.findOne({ isActive: true }).lean();
@@ -318,12 +447,12 @@ exports.pinLogin = async (req, res, next) => {
     const jwtSecret = process.env.JWT_SECRET || 'tcb_pos_secure_jwt_secret_key_shift_token_2026_983742';
     const token = jwt.sign(
       {
-        id: user._id,
-        role: user.role,
-        fullName: user.fullName,
-        employeeCode: user.employeeCode,
-        email: user.email,
-        companyId: user.companyId
+        id: matchedUser._id,
+        role: matchedUser.role,
+        fullName: matchedUser.fullName,
+        employeeCode: matchedUser.employeeCode,
+        email: matchedUser.email,
+        companyId: matchedUser.companyId
       },
       jwtSecret,
       { expiresIn: '12h' }
@@ -334,18 +463,22 @@ exports.pinLogin = async (req, res, next) => {
       data: {
         token,
         user: {
-          _id: user._id,
-          fullName: user.fullName,
-          employeeCode: user.employeeCode,
-          role: user.role,
-          email: user.email,
-          companyId: user.companyId,
+          _id: matchedUser._id,
+          fullName: matchedUser.fullName,
+          employeeCode: matchedUser.employeeCode,
+          role: matchedUser.role,
+          email: matchedUser.email,
+          companyId: matchedUser.companyId,
           company: company || {
             name: 'PoS System',
             branding: { displayName: 'PoS System', logoText: 'P', themeColor: '#F59E0B' },
             currency: { code: 'MYR', symbol: 'RM' }
           }
-        }
+        },
+        terminal: boundTerminal ? {
+          deviceId: boundTerminal.deviceId,
+          name: boundTerminal.name
+        } : null
       }
     });
   } catch (error) {

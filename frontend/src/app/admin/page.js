@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import Header from '../../components/Header';
 import { useAxiosSecure } from '../../hooks/useApi';
 import { useAuth } from '../../context/AuthContext';
@@ -27,8 +28,16 @@ import {
 } from 'lucide-react';
 
 export default function AdminCatalogPage() {
+  const router = useRouter();
   const axiosSecure = useAxiosSecure();
-  const { role, currency, company, updateActiveCompany } = useAuth();
+  const { user, role, currency, company, updateActiveCompany } = useAuth();
+
+  // Route Guard: Non-admins cannot access the admin dashboard
+  useEffect(() => {
+    if (role && role !== 'admin' && role !== 'system_admin') {
+      router.replace('/');
+    }
+  }, [role, router]);
 
   const [activeTab, setActiveTab] = useState('products'); // 'products', 'categories', 'users', 'discounts', 'settings', 'companies'
   const [categories, setCategories] = useState([]);
@@ -85,7 +94,7 @@ export default function AdminCatalogPage() {
   const [userEmail, setUserEmail] = useState('');
   const [userEmployeeCode, setUserEmployeeCode] = useState('');
   const [userRole, setUserRole] = useState('staff');
-  const [userPassword, setUserPassword] = useState('password123');
+  const [userPassword, setUserPassword] = useState('1234');
   const [userCompanyId, setUserCompanyId] = useState('');
   const [userFilterCompany, setUserFilterCompany] = useState('ALL');
 
@@ -414,14 +423,19 @@ export default function AdminCatalogPage() {
     e.preventDefault();
     setMessage(null);
 
+    if (!/^\d{4,6}$/.test(userPassword.trim())) {
+      setMessage({ type: 'error', text: 'PIN code must be between 4 and 6 numeric digits (e.g. 1234)' });
+      return;
+    }
+
     try {
       const payload = {
         fullName: userFullName.trim(),
         email: userEmail.trim().toLowerCase(),
         employeeCode: userEmployeeCode.trim().toUpperCase(),
         role: userRole,
-        password: userPassword,
-        pinCode: userPassword
+        password: userPassword.trim(),
+        pinCode: userPassword.trim()
       };
 
       if (role === 'system_admin' && userCompanyId) {
@@ -438,6 +452,7 @@ export default function AdminCatalogPage() {
         setUserFullName('');
         setUserEmail('');
         setUserEmployeeCode('');
+        setUserPassword('1234');
         setUserCompanyId('');
         fetchCatalogData();
       }
@@ -468,6 +483,10 @@ export default function AdminCatalogPage() {
         isActive: editUserIsActive
       };
       if (editUserPinCode.trim()) {
+        if (!/^\d{4,6}$/.test(editUserPinCode.trim())) {
+          setMessage({ type: 'error', text: 'PIN code must be between 4 and 6 numeric digits (e.g. 1234)' });
+          return;
+        }
         payload.pinCode = editUserPinCode.trim();
       }
       if (role === 'system_admin') {
@@ -482,6 +501,21 @@ export default function AdminCatalogPage() {
       }
     } catch (err) {
       setMessage({ type: 'error', text: err.response?.data?.message || 'Failed to update user' });
+    }
+  };
+
+  const handleDeleteUser = async (userId, userName) => {
+    if (!window.confirm(`Are you sure you want to permanently delete user "${userName}"? This action cannot be undone.`)) {
+      return;
+    }
+    try {
+      const res = await axiosSecure.delete(`/api/admin/users/${userId}`);
+      if (res.data?.success) {
+        setMessage({ type: 'success', text: `User "${userName}" deleted successfully!` });
+        fetchCatalogData();
+      }
+    } catch (err) {
+      setMessage({ type: 'error', text: err.response?.data?.message || 'Failed to delete user' });
     }
   };
 
@@ -1445,16 +1479,19 @@ export default function AdminCatalogPage() {
                     Terminal PIN Code (4-6 Digits) *
                   </label>
                   <input
-                    type="password"
-                    maxLength="6"
+                    id="user-pin"
+                    type="text"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    maxLength={6}
                     required
                     value={userPassword}
-                    onChange={(e) => setUserPassword(e.target.value)}
+                    onChange={(e) => setUserPassword(e.target.value.replace(/\D/g, '').slice(0, 6))}
                     placeholder="1234"
                     className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-white font-mono text-center tracking-widest focus:ring-2 focus:ring-amber-500 focus:outline-none text-base"
                   />
                   <span className="text-[11px] text-slate-400 mt-1 block">
-                    Cashiers type this PIN on the POS numpad to unlock the terminal and ring up sales.
+                    Numeric PIN entered on the POS numpad to unlock the terminal and ring up sales.
                   </span>
                 </div>
 
@@ -1560,7 +1597,7 @@ export default function AdminCatalogPage() {
                             </td>
                             <td className="py-3 px-3 font-mono text-xs text-slate-200">
                               <span className="px-2 py-1 rounded bg-slate-800 border border-slate-700 font-bold text-amber-300">
-                                {u.pinCode || '••••'}
+                                ••••
                               </span>
                             </td>
                             <td className="py-3 px-3">
@@ -1575,15 +1612,27 @@ export default function AdminCatalogPage() {
                               )}
                             </td>
                             <td className="py-3 px-3 text-right">
-                              <button
-                                type="button"
-                                onClick={() => openEditUserModal(u)}
-                                className="p-1.5 bg-slate-800 hover:bg-slate-700 text-amber-400 rounded-lg transition inline-flex items-center space-x-1 cursor-pointer"
-                                title="Edit User Profile"
-                              >
-                                <Edit2 className="w-3.5 h-3.5" />
-                                <span className="text-xs font-semibold">Edit</span>
-                              </button>
+                              <div className="flex items-center justify-end space-x-1.5">
+                                <button
+                                  type="button"
+                                  onClick={() => openEditUserModal(u)}
+                                  className="p-1.5 bg-slate-800 hover:bg-slate-700 text-amber-400 rounded-lg transition inline-flex items-center space-x-1 cursor-pointer"
+                                  title="Edit User Profile"
+                                >
+                                  <Edit2 className="w-3.5 h-3.5" />
+                                  <span className="text-xs font-semibold">Edit</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteUser(u._id, u.fullName)}
+                                  disabled={u._id === (user?._id || user?.id || user?.mongoId)}
+                                  className="p-1.5 bg-slate-800 hover:bg-red-950/80 text-slate-400 hover:text-red-400 rounded-lg transition inline-flex items-center space-x-1 cursor-pointer disabled:opacity-25 disabled:cursor-not-allowed"
+                                  title={u._id === (user?._id || user?.id || user?.mongoId) ? "Cannot delete your own logged-in account" : "Delete User"}
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                  <span className="text-xs font-semibold">Delete</span>
+                                </button>
+                              </div>
                             </td>
                           </tr>
                         ))}
@@ -2492,14 +2541,25 @@ export default function AdminCatalogPage() {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">
-                    Reset PIN Code (Optional, 4-6 Digits)
-                  </label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-xs font-semibold text-slate-300">
+                      Reset PIN Code (Optional, 4-6 Digits)
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => setEditUserPinCode('1234')}
+                      className="text-[11px] text-amber-400 hover:text-amber-300 underline cursor-pointer"
+                    >
+                      Set to 1234
+                    </button>
+                  </div>
                   <input
-                    type="password"
-                    maxLength="6"
+                    type="text"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    maxLength={6}
                     value={editUserPinCode}
-                    onChange={(e) => setEditUserPinCode(e.target.value)}
+                    onChange={(e) => setEditUserPinCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
                     placeholder="Leave blank to keep existing PIN"
                     className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-white font-mono text-center tracking-widest focus:ring-2 focus:ring-amber-500 focus:outline-none"
                   />

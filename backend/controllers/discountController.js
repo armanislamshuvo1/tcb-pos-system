@@ -7,7 +7,7 @@ exports.getPresetDiscounts = async (req, res, next) => {
   try {
     const query = { isActive: true, isPresetButton: true };
     if (req.user && req.user.role !== 'system_admin' && req.user.companyId) {
-      query.$or = [{ companyId: req.user.companyId }, { companyId: null }];
+      query.companyId = req.user.companyId;
     }
 
     const discounts = await Discount.find(query)
@@ -30,7 +30,7 @@ exports.getAllDiscounts = async (req, res, next) => {
   try {
     const query = {};
     if (req.user && req.user.role !== 'system_admin' && req.user.companyId) {
-      query.$or = [{ companyId: req.user.companyId }, { companyId: null }];
+      query.companyId = req.user.companyId;
     }
 
     const discounts = await Discount.find(query)

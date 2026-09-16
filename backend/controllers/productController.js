@@ -9,9 +9,9 @@ exports.getProducts = async (req, res, next) => {
     const { categoryId, search, activeOnly = 'true' } = req.query;
     const query = {};
 
-    // Multi-tenant scoping: Non-system admins only see their company's products (or shared null companyId)
+    // Multi-tenant scoping: Non-system admins only see their company's products
     if (req.user && req.user.role !== 'system_admin' && req.user.companyId) {
-      query.$or = [{ companyId: req.user.companyId }, { companyId: null }];
+      query.companyId = req.user.companyId;
     }
 
     if (activeOnly === 'true') {

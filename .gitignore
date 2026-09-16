@@ -38,3 +38,6 @@ Thumbs.db
 # Testing & Coverage
 coverage/
 */coverage/
+
+.vercel
+.env*

@@ -30,14 +30,18 @@ export const AuthProvider = ({ children }) => {
     }
   }, []);
 
-  const loginWithPin = async (identifier, pinCode) => {
+  const loginWithPin = async (identifier, pinCode, deviceId) => {
     try {
-      const res = await publicApi.post('/api/users/pin-login', {
+      const payload = {
         identifier: identifier?.trim(),
         employeeCode: identifier?.trim(),
         email: identifier?.trim(),
         pinCode: pinCode?.trim()
-      });
+      };
+      if (deviceId) {
+        payload.deviceId = deviceId;
+      }
+      const res = await publicApi.post('/api/users/pin-login', payload);
 
       if (res.data?.success) {
         const { token: newToken, user: newUser } = res.data.data;

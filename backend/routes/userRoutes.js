@@ -4,10 +4,10 @@ const rateLimit = require('express-rate-limit');
 const userController = require('../controllers/userController');
 const { authenticateToken, requireRole } = require('../middleware/authMiddleware');
 
-// Brute-force protection: Max 5 PIN login attempts per minute per IP
+// Brute-force protection: Max 30 PIN login attempts per minute per IP
 const pinLoginLimiter = rateLimit({
   windowMs: 60 * 1000, // 1 minute
-  max: 5,
+  max: 30,
   standardHeaders: true,
   legacyHeaders: false,
   message: {
@@ -23,10 +23,10 @@ router.post('/pin-login', pinLoginLimiter, userController.pinLogin);
 router.get('/me', authenticateToken, userController.getCurrentUser);
 router.get('/staff', authenticateToken, userController.getActiveStaff);
 
-// Admin-only user provisioning, editing & listing
+// Admin-only user provisioning, editing, listing & deletion
 router.get('/admin/users', authenticateToken, requireRole('admin'), userController.getAllUsers);
 router.post('/admin/create', authenticateToken, requireRole('admin'), userController.createUser);
 router.put('/admin/users/:id', authenticateToken, requireRole('admin'), userController.updateUser);
+router.delete('/admin/users/:id', authenticateToken, requireRole('admin'), userController.deleteUser);
 
 module.exports = router;
-
