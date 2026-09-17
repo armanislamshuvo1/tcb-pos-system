@@ -19,7 +19,8 @@ exports.calculateCartFinancials = ({ items = [], globalDiscount = null }) => {
     if (discountType === 'percentage' && discountValue > 0) {
       lineDiscountInCents = Math.round((lineRawTotal * discountValue) / 100);
     } else if (discountType === 'fixed_cents' && discountValue > 0) {
-      lineDiscountInCents = Math.min(lineRawTotal, Math.round(discountValue));
+      const perUnitDiscount = Math.min(unitPrice, Math.round(discountValue));
+      lineDiscountInCents = perUnitDiscount * quantity;
     }
 
     // Discount cannot exceed the line item total

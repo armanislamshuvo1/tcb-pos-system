@@ -7,7 +7,8 @@ const calculateLineFinancials = (unitPriceInCents, quantity, discountType, disco
   if (discountType === 'percentage' && discountValue > 0) {
     discountInCents = Math.round((lineRaw * discountValue) / 100);
   } else if (discountType === 'fixed_cents' && discountValue > 0) {
-    discountInCents = Math.min(lineRaw, Math.round(discountValue));
+    const perUnitDiscount = Math.min(unitPriceInCents, Math.round(discountValue));
+    discountInCents = perUnitDiscount * quantity;
   }
 
   discountInCents = Math.min(lineRaw, Math.max(0, discountInCents));

@@ -234,7 +234,7 @@ export default function PosPage() {
       {/* Side-by-Side Layout for Tablet and PC (md breakpoint and up) */}
       <main className="hidden md:flex flex-1 w-full max-w-[1750px] mx-auto p-3 sm:p-4 gap-3 sm:gap-4 h-[calc(100vh-3.75rem)] overflow-hidden">
         {/* Left Column: Product Catalog & Search (Products on the left) */}
-        <div className="w-7/12 lg:w-7/12 xl:w-3/5 flex flex-col h-full overflow-hidden space-y-2.5 sm:space-y-3">
+        <div className="w-7/12 lg:w-7/12 xl:w-3/5 flex flex-col h-full min-h-0 overflow-hidden space-y-2.5 sm:space-y-3">
           {/* Quick Search */}
           <SearchBar searchTerm={searchTerm} onSearchChange={setSearchTerm} />
 
@@ -246,7 +246,7 @@ export default function PosPage() {
           />
 
           {/* Touch-First Product Grid */}
-          <div className="flex-1 overflow-y-auto pr-1">
+          <div className="flex-1 min-h-0 overflow-y-auto pr-1.5 pb-8 overscroll-contain">
             {loading ? (
               <div className="flex items-center justify-center h-64 text-slate-400 text-sm">
                 Loading product catalog...
@@ -258,7 +258,7 @@ export default function PosPage() {
         </div>
 
         {/* Right Column: Active Ticket & Checkout (Cart on the right) */}
-        <div className="w-5/12 lg:w-5/12 xl:w-2/5 h-full overflow-hidden">
+        <div className="w-5/12 lg:w-5/12 xl:w-2/5 h-full min-h-0 overflow-hidden">
           <ActiveTicket
             customers={customers}
             onCreateCustomer={handleCreateCustomer}

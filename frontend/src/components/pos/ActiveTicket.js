@@ -361,7 +361,7 @@ export default function ActiveTicket({
       </div>
 
       {/* Cart Items List */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-2.5 divide-y divide-slate-800/60">
+      <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-2.5 divide-y divide-slate-800/60">
         {items.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center text-slate-500 text-sm space-y-2 py-12">
             <Tag className="w-8 h-8 text-slate-600" />
@@ -391,7 +391,13 @@ export default function ActiveTicket({
                       <span>{unitPriceFormatted} ea</span>
                       {hasDiscount && (
                         <span className="text-emerald-400 font-medium">
-                          (-{formatCurrency(item.lineDiscountInCents, currency)})
+                          {item.quantity > 1 ? (
+                            item.lineDiscountType === 'fixed_cents'
+                              ? `(-${formatCurrency(item.lineDiscountValue, currency)} ea • -${formatCurrency(item.lineDiscountInCents, currency)} total)`
+                              : `(-${item.lineDiscountValue}% • -${formatCurrency(item.lineDiscountInCents, currency)} total)`
+                          ) : (
+                            `(-${formatCurrency(item.lineDiscountInCents, currency)})`
+                          )}
                         </span>
                       )}
                     </div>
@@ -477,7 +483,13 @@ export default function ActiveTicket({
                       title="Custom discount"
                     >
                       {!hasDiscount && !hasProductDiscount && <Tag className="w-3 h-3" />}
-                      <span>{hasDiscount && !hasProductDiscount ? `-${item.lineDiscountValue}%` : 'Disc'}</span>
+                      <span>
+                        {hasDiscount && !hasProductDiscount
+                          ? (item.lineDiscountType === 'fixed_cents'
+                              ? `-${formatCurrency(item.lineDiscountValue, currency)}`
+                              : `-${item.lineDiscountValue}%`)
+                          : 'Disc'}
+                      </span>
                     </button>
 
                     {/* Delete Item */}
@@ -509,7 +521,9 @@ export default function ActiveTicket({
                       </button>
                     )}
                     <div className="flex items-center justify-between text-xs">
-                      <span className="text-slate-300 font-semibold">Custom Item Discount</span>
+                      <span className="text-slate-300 font-semibold">
+                        Custom Item Discount {manualDiscountType === 'fixed_cents' ? '(per item)' : ''}
+                      </span>
                       {/* Discount Unit Switch */}
                       <div className="flex rounded-lg overflow-hidden border border-slate-700 bg-slate-900 p-0.5">
                         <button
@@ -546,7 +560,7 @@ export default function ActiveTicket({
                           max={manualDiscountType === 'percentage' ? '100' : undefined}
                           value={manualDiscountValue}
                           onChange={(e) => setManualDiscountValue(e.target.value)}
-                          placeholder={manualDiscountType === 'fixed_cents' ? 'e.g. 2.00' : 'e.g. 10'}
+                          placeholder={manualDiscountType === 'fixed_cents' ? 'e.g. 2.00 / item' : 'e.g. 10'}
                           className="w-full px-3 py-1.5 bg-slate-900 border border-slate-700 rounded-lg text-xs text-white focus:outline-none focus:ring-1 focus:ring-amber-500"
                         />
                       </div>
