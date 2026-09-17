@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useCartStore } from '../../store/useCartStore';
 import { useAuth } from '../../context/AuthContext';
 import { formatCurrency } from '../../utils/currency';
@@ -28,6 +28,100 @@ import StaffSearchSelect from './StaffSearchSelect';
 import RoomSearchSelect from './RoomSearchSelect';
 import { isDormRoom } from '../../utils/rooms';
 
+function QuantityControl({ quantity, onUpdateDelta, onSetQuantity }) {
+  const [val, setVal] = useState(String(quantity));
+  const [isFocused, setIsFocused] = useState(false);
+
+  useEffect(() => {
+    if (!isFocused) {
+      setVal(String(quantity));
+    }
+  }, [quantity, isFocused]);
+
+  const commitValue = (newRawVal) => {
+    const parsed = parseInt(newRawVal, 10);
+    if (isNaN(parsed) || parsed <= 0) {
+      setVal(String(quantity));
+    } else {
+      setVal(String(parsed));
+      if (parsed !== quantity) {
+        onSetQuantity(parsed);
+      }
+    }
+  };
+
+  const handleChange = (e) => {
+    const next = e.target.value;
+    // Allow up to 4 digits only (1-9999), or empty string while user clears to retype
+    if (next.length <= 4 && /^\d*$/.test(next)) {
+      setVal(next);
+      const parsed = parseInt(next, 10);
+      if (!isNaN(parsed) && parsed > 0) {
+        onSetQuantity(parsed);
+      }
+    }
+  };
+
+  const handleBlur = () => {
+    setIsFocused(false);
+    commitValue(val);
+  };
+
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter') {
+      e.currentTarget.blur();
+    } else if (e.key === 'Escape') {
+      setVal(String(quantity));
+      e.currentTarget.blur();
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      onUpdateDelta(1);
+    } else if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      onUpdateDelta(-1);
+    }
+  };
+
+  return (
+    <div className="flex items-center space-x-1 bg-slate-800 rounded-lg p-0.5 border border-slate-700/80">
+      <button
+        type="button"
+        onClick={() => onUpdateDelta(-1)}
+        className="w-7 h-7 flex items-center justify-center rounded-md bg-slate-700/80 hover:bg-slate-600 text-slate-200 active:scale-95 cursor-pointer shrink-0 transition-colors"
+        title="Decrease quantity"
+      >
+        <Minus className="w-3.5 h-3.5" />
+      </button>
+
+      <input
+        type="text"
+        inputMode="numeric"
+        pattern="[0-9]*"
+        value={val}
+        onFocus={(e) => {
+          setIsFocused(true);
+          e.target.select();
+        }}
+        onChange={handleChange}
+        onBlur={handleBlur}
+        onKeyDown={handleKeyDown}
+        title="Click to enter quantity manually"
+        aria-label="Item quantity"
+        className="w-10 sm:w-11 h-7 text-center font-bold text-sm text-white bg-slate-900/60 focus:bg-slate-900 border border-slate-700/60 focus:border-amber-500 rounded focus:outline-none transition-colors px-0.5 cursor-text select-all"
+      />
+
+      <button
+        type="button"
+        onClick={() => onUpdateDelta(1)}
+        className="w-7 h-7 flex items-center justify-center rounded-md bg-slate-700/80 hover:bg-slate-600 text-slate-200 active:scale-95 cursor-pointer shrink-0 transition-colors"
+        title="Increase quantity"
+      >
+        <Plus className="w-3.5 h-3.5" />
+      </button>
+    </div>
+  );
+}
+
 export default function ActiveTicket({ 
   customers = [], 
   onCreateCustomer, 
@@ -42,6 +136,7 @@ export default function ActiveTicket({
     staffMember, 
     setStaffMember, 
     updateQuantity, 
+    setQuantity,
     removeItem, 
     setLineDiscount, 
     setGlobalDiscount, 
@@ -440,23 +535,11 @@ export default function ActiveTicket({
 
                 {/* Quantity Controls & Modifiers */}
                 <div className="flex items-center justify-between mt-2">
-                  <div className="flex items-center space-x-1.5 bg-slate-800 rounded-lg p-0.5 border border-slate-700/80">
-                    <button
-                      type="button"
-                      onClick={() => updateQuantity(item.productId, -1)}
-                      className="w-7 h-7 flex items-center justify-center rounded-md bg-slate-700/80 hover:bg-slate-600 text-slate-200 active:scale-95 cursor-pointer"
-                    >
-                      <Minus className="w-3.5 h-3.5" />
-                    </button>
-                    <span className="w-7 text-center font-bold text-sm text-white">{item.quantity}</span>
-                    <button
-                      type="button"
-                      onClick={() => updateQuantity(item.productId, 1)}
-                      className="w-7 h-7 flex items-center justify-center rounded-md bg-slate-700/80 hover:bg-slate-600 text-slate-200 active:scale-95 cursor-pointer"
-                    >
-                      <Plus className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
+                  <QuantityControl
+                    quantity={item.quantity}
+                    onUpdateDelta={(delta) => updateQuantity(item.productId, delta)}
+                    onSetQuantity={(newQty) => setQuantity(item.productId, newQty)}
+                  />
 
                   <div className="flex items-center space-x-1.5">
                     {/* If discount is applied: show applied badge with remove (X) */}

@@ -108,6 +108,35 @@ export const useCartStore = create((set, get) => ({
     });
   },
 
+  setQuantity: (productId, quantity) => {
+    set((state) => {
+      const newQty = parseInt(quantity, 10);
+      const updatedItems = state.items
+        .map((item) => {
+          if (item.productId === productId) {
+            if (isNaN(newQty) || newQty <= 0) return null;
+
+            const financials = calculateLineFinancials(
+              item.unitPriceInCents,
+              newQty,
+              item.lineDiscountType,
+              item.lineDiscountValue
+            );
+
+            return {
+              ...item,
+              quantity: newQty,
+              ...financials
+            };
+          }
+          return item;
+        })
+        .filter(Boolean);
+
+      return { items: updatedItems };
+    });
+  },
+
   removeItem: (productId) => {
     set((state) => ({
       items: state.items.filter((item) => item.productId !== productId)
