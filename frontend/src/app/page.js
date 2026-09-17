@@ -7,14 +7,19 @@ import SearchBar from '../components/pos/SearchBar';
 import ProductGrid from '../components/pos/ProductGrid';
 import ActiveTicket from '../components/pos/ActiveTicket';
 import Link from 'next/link';
-import { Monitor, Smartphone, AlertTriangle } from 'lucide-react';
+import { ShoppingCart, ChevronRight, ArrowLeft } from 'lucide-react';
 import { useAxiosSecure } from '../hooks/useApi';
+import { useAuth } from '../context/AuthContext';
 import { useCartStore } from '../store/useCartStore';
+import { formatCurrency } from '../utils/currency';
 import { offlineDb } from '../utils/offlineDb';
 
 export default function PosPage() {
   const axiosSecure = useAxiosSecure();
-  const { addItem, items, globalDiscount, notes } = useCartStore();
+  const { currency } = useAuth();
+  const { addItem, items, globalDiscount, notes, getTotals } = useCartStore();
+  const totals = getTotals();
+  const [mobileActiveView, setMobileActiveView] = useState('catalog'); // 'catalog' | 'ticket'
 
   const [categories, setCategories] = useState([]);
   const [products, setProducts] = useState([]);
@@ -179,64 +184,19 @@ export default function PosPage() {
   };
 
   return (
-    <div className="h-screen max-h-screen bg-slate-950 text-white flex flex-col overflow-hidden">
+    <div className="h-screen h-dvh max-h-screen bg-slate-950 text-white flex flex-col overflow-hidden">
       <Header />
 
-      {/* Mobile Device Notice - Displayed only on screens smaller than tablet (< md / 768px) */}
-      <div className="block md:hidden flex-1 p-4 flex flex-col items-center justify-center text-center overflow-y-auto">
-        <div className="max-w-md w-full bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-5 my-auto">
-          <div className="w-16 h-16 mx-auto rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400">
-            <Monitor className="w-8 h-8" />
+      {/* Responsive Full-Screen Layout: Single Pane on Mobile (< md), Side-by-Side on Tablet & PC (>= md) */}
+      <main className="flex-1 min-h-0 w-full max-w-[1750px] mx-auto p-2 sm:p-3 md:p-4 gap-3 sm:gap-4 overflow-hidden flex flex-col md:flex-row">
+        {/* Left Column: Product Catalog & Search */}
+        <div className={`w-full md:w-7/12 lg:w-7/12 xl:w-3/5 flex flex-col h-full min-h-0 overflow-hidden space-y-2.5 sm:space-y-3 ${
+          mobileActiveView === 'ticket' ? 'hidden md:flex' : 'flex'
+        }`}>
+          {/* Quick Search Row with left padding so floating menu button sits cleanly */}
+          <div className="pl-13 sm:pl-15">
+            <SearchBar searchTerm={searchTerm} onSearchChange={setSearchTerm} />
           </div>
-
-          <div className="space-y-2">
-            <div className="inline-flex items-center space-x-1.5 px-3 py-1 rounded-full text-[11px] font-bold uppercase tracking-wider bg-amber-500/15 text-amber-300 border border-amber-500/30">
-              <AlertTriangle className="w-3.5 h-3.5" />
-              <span>Tablet & PC Recommended</span>
-            </div>
-            <h2 className="text-xl font-extrabold text-white">
-              POS System Not Suitable for Mobile
-            </h2>
-            <p className="text-slate-400 text-xs sm:text-sm leading-relaxed">
-              This Point-of-Sale terminal is designed for touch tablets (e.g. iPad) and PC displays to show the product catalog and active cart side-by-side. Phone screens cannot safely accommodate fast checkout operations.
-            </p>
-          </div>
-
-          <div className="p-3.5 rounded-2xl bg-slate-850 border border-slate-800 text-left space-y-2">
-            <div className="text-xs font-bold text-slate-300 flex items-center space-x-2">
-              <Smartphone className="w-4 h-4 text-amber-400" />
-              <span>Instructions for Staff:</span>
-            </div>
-            <ul className="text-xs text-slate-400 space-y-1 list-disc list-inside">
-              <li>Open this terminal on a POS tablet or desktop computer</li>
-              <li>If already on a tablet, rotate your screen to <strong>Landscape mode</strong></li>
-            </ul>
-          </div>
-
-          {/* Quick Mobile Navigation Links */}
-          <div className="pt-2 space-y-2">
-            <Link
-              href="/tabs"
-              className="w-full flex items-center justify-center space-x-2 py-2.5 px-4 rounded-xl bg-slate-800 hover:bg-slate-750 border border-slate-700 text-slate-200 text-xs font-bold transition"
-            >
-              <span>Go to Staff Tab Management</span>
-            </Link>
-            <Link
-              href="/ledger"
-              className="w-full flex items-center justify-center space-x-2 py-2.5 px-4 rounded-xl bg-slate-800 hover:bg-slate-750 border border-slate-700 text-slate-200 text-xs font-bold transition"
-            >
-              <span>Go to Transaction Ledger</span>
-            </Link>
-          </div>
-        </div>
-      </div>
-
-      {/* Side-by-Side Layout for Tablet and PC (md breakpoint and up) */}
-      <main className="hidden md:flex flex-1 min-h-0 w-full max-w-[1750px] mx-auto p-3 sm:p-4 gap-3 sm:gap-4 overflow-hidden">
-        {/* Left Column: Product Catalog & Search (Products on the left) */}
-        <div className="w-7/12 lg:w-7/12 xl:w-3/5 flex flex-col h-full min-h-0 overflow-hidden space-y-2.5 sm:space-y-3">
-          {/* Quick Search */}
-          <SearchBar searchTerm={searchTerm} onSearchChange={setSearchTerm} />
 
           {/* Dynamic Category Tabs */}
           <CategoryTabs
@@ -246,7 +206,7 @@ export default function PosPage() {
           />
 
           {/* Touch-First Product Grid */}
-          <div className="flex-1 min-h-0 overflow-y-auto pr-2 pb-12 touch-pan-y">
+          <div className="flex-1 min-h-0 overflow-y-auto pr-1 pb-16 md:pb-4 touch-pan-y">
             {loading ? (
               <div className="flex items-center justify-center h-64 text-slate-400 text-sm">
                 Loading product catalog...
@@ -255,17 +215,67 @@ export default function PosPage() {
               <ProductGrid products={filteredProducts} onAddToCart={addItem} />
             )}
           </div>
+
+          {/* Mobile Bottom Bar for Quick Ticket Access */}
+          <div className="md:hidden mt-auto -mx-2 -mb-2 p-2.5 sm:p-3 bg-slate-900/95 border-t border-slate-800 backdrop-blur-md flex items-center justify-between gap-2 shadow-2xl shrink-0">
+            <div className="flex items-center space-x-2.5 min-w-0">
+              <div className="w-9 h-9 rounded-xl bg-amber-500/20 text-amber-400 border border-amber-500/30 flex items-center justify-center font-bold text-xs relative shrink-0">
+                <ShoppingCart className="w-4 h-4" />
+                {totals.itemCount > 0 && (
+                  <span className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-amber-500 text-black text-[10px] font-black flex items-center justify-center shadow">
+                    {totals.itemCount}
+                  </span>
+                )}
+              </div>
+              <div className="truncate">
+                <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
+                  {totals.itemCount} {totals.itemCount === 1 ? 'item' : 'items'} in cart
+                </div>
+                <div className="text-sm font-black text-amber-400 font-mono">
+                  {formatCurrency(totals.grandTotalInCents, currency)}
+                </div>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setMobileActiveView('ticket')}
+              className="flex items-center space-x-1.5 px-4 py-2.5 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-black font-extrabold text-xs rounded-xl shadow-lg shadow-amber-500/25 active:scale-95 transition cursor-pointer shrink-0"
+            >
+              <span>View Ticket</span>
+              <ChevronRight className="w-4 h-4 stroke-[3]" />
+            </button>
+          </div>
         </div>
 
-        {/* Right Column: Active Ticket & Checkout (Cart on the right) */}
-        <div className="w-5/12 lg:w-5/12 xl:w-2/5 h-full min-h-0 overflow-hidden">
-          <ActiveTicket
-            customers={customers}
-            onCreateCustomer={handleCreateCustomer}
-            staffMembers={staffMembers}
-            presetDiscounts={presetDiscounts}
-            onCheckout={handleCheckout}
-          />
+        {/* Right Column: Active Ticket & Checkout */}
+        <div className={`w-full md:w-5/12 lg:w-5/12 xl:w-2/5 h-full min-h-0 overflow-hidden flex-col ${
+          mobileActiveView === 'ticket' ? 'flex' : 'hidden md:flex'
+        }`}>
+          {/* Mobile Back to Catalog Button */}
+          <div className="md:hidden pb-2 pl-13 sm:pl-15 flex items-center justify-between shrink-0">
+            <button
+              type="button"
+              onClick={() => setMobileActiveView('catalog')}
+              className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-750 text-amber-400 text-xs font-bold border border-slate-700 active:scale-95 transition cursor-pointer"
+            >
+              <ArrowLeft className="w-3.5 h-3.5" />
+              <span>Catalog ({filteredProducts.length})</span>
+            </button>
+            <span className="text-xs font-bold text-slate-400">
+              Active Ticket ({totals.itemCount})
+            </span>
+          </div>
+
+          <div className="flex-1 min-h-0">
+            <ActiveTicket
+              customers={customers}
+              onCreateCustomer={handleCreateCustomer}
+              staffMembers={staffMembers}
+              presetDiscounts={presetDiscounts}
+              onCheckout={handleCheckout}
+            />
+          </div>
         </div>
       </main>
     </div>

@@ -77,111 +77,22 @@ export default function Header() {
 
   return (
     <>
-      <header className="bg-slate-900 text-white border-b border-slate-800 sticky top-0 z-40">
-        <div className="w-full max-w-[1750px] mx-auto px-3 sm:px-4 lg:px-6">
-          <div className="flex items-center justify-between h-14 sm:h-15">
-            {/* Left: Menu Sidebar Toggle & Brand */}
-            <div className="flex items-center space-x-2.5 sm:space-x-3">
-              <button
-                type="button"
-                onClick={() => setIsSidebarOpen(true)}
-                className="flex items-center space-x-1.5 px-2.5 py-1.5 rounded-xl border border-slate-700 bg-slate-800 hover:bg-slate-750 hover:border-slate-600 text-slate-200 text-xs font-bold transition shadow-sm active:scale-95 cursor-pointer"
-                title="Open Navigation Menu"
-              >
-                <Menu className="w-4 h-4 text-amber-400" />
-                <span className="hidden sm:inline font-semibold">Menu</span>
-              </button>
-
-              <Link href="/" className="flex items-center space-x-2.5">
-                <div className="w-8 h-8 rounded-lg overflow-hidden bg-slate-800 border border-slate-700/80 flex items-center justify-center shadow-md shrink-0">
-                  <img
-                    src={brandLogoImg}
-                    alt={brandName}
-                    className="w-full h-full object-cover"
-                    onError={(e) => {
-                      e.currentTarget.style.display = 'none';
-                      if (e.currentTarget.nextElementSibling) {
-                        e.currentTarget.nextElementSibling.style.display = 'flex';
-                      }
-                    }}
-                  />
-                  <div style={{ display: 'none' }} className="w-full h-full bg-amber-500 items-center justify-center font-bold text-black text-sm uppercase">
-                    {brandLogo}
-                  </div>
-                </div>
-                <div>
-                  <span className="font-extrabold text-base sm:text-lg tracking-tight bg-gradient-to-r from-amber-400 to-orange-400 bg-clip-text text-transparent">
-                    {brandName}
-                  </span>
-                </div>
-              </Link>
-
-              {/* Online / Offline Indicator */}
-              <div className={`hidden sm:flex items-center space-x-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold ${
-                isOnline ? 'bg-emerald-950/80 text-emerald-400 border border-emerald-800/60' : 'bg-red-950/80 text-red-400 border border-red-800/60 animate-pulse'
-              }`}>
-                {isOnline ? <Wifi className="w-3 h-3" /> : <WifiOff className="w-3 h-3" />}
-                <span>{isOnline ? 'Online' : 'Offline'}</span>
-              </div>
-            </div>
-
-            {/* Right: Staff Identity, Switch User & Lock/Logout */}
-            <div className="flex items-center space-x-2 sm:space-x-3">
-              {/* Cashier Identity Display */}
-              <div className="text-right">
-                <div className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider hidden sm:block">Staff Member</div>
-                <div className="text-xs sm:text-sm font-bold text-white flex items-center justify-end space-x-1">
-                  <span className="truncate max-w-[120px] sm:max-w-[180px]">
-                    {user?.fullName || user?.employeeCode || 'User'}
-                  </span>
-                  {isSystemAdmin ? (
-                    <Crown className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-amber-400 shrink-0" />
-                  ) : role === 'admin' ? (
-                    <ShieldCheck className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-purple-400 shrink-0" />
-                  ) : (
-                    <UserCircle className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-amber-400 shrink-0" />
-                  )}
-                </div>
-              </div>
-
-              {/* Role Indicator Badge */}
-              <div className="hidden sm:block px-2 py-0.5 text-[10px] font-extrabold uppercase rounded-md border border-slate-700 bg-slate-800 text-slate-200">
-                {isSystemAdmin ? (
-                  <span className="text-amber-400 flex items-center space-x-1 font-black tracking-wider">
-                    <span>SYS ADMIN</span>
-                  </span>
-                ) : role === 'admin' ? (
-                  <span className="text-purple-400">ADMIN</span>
-                ) : (
-                  <span className="text-amber-400">{role || 'USER'}</span>
-                )}
-              </div>
-
-              {/* PIN Code Switch Button */}
-              <button
-                type="button"
-                onClick={() => setIsPinModalOpen(true)}
-                className="flex items-center space-x-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl border border-amber-500/40 bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 text-xs font-bold transition shadow-sm active:scale-95 cursor-pointer"
-                title="Switch User via PIN"
-              >
-                <KeyRound className="w-3.5 h-3.5 text-amber-400" />
-                <span className="hidden sm:inline">Switch</span>
-              </button>
-
-              {/* Lock Terminal / Logout Button */}
-              <button
-                type="button"
-                onClick={logout}
-                className="flex items-center space-x-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl border border-red-500/40 bg-red-500/10 hover:bg-red-500/20 text-red-300 text-xs font-bold transition shadow-sm active:scale-95 cursor-pointer"
-                title="Lock Terminal & Log Out"
-              >
-                <LogOut className="w-3.5 h-3.5 text-red-400" />
-                <span>Lock</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      </header>
+      {/* Floating Menu Trigger Button (Replaces top navbar to allow full-screen layout) */}
+      <button
+        type="button"
+        onClick={() => setIsSidebarOpen(true)}
+        className="fixed top-2.5 left-2.5 z-40 flex items-center space-x-2 px-3 py-2 rounded-xl bg-slate-900/95 hover:bg-slate-850 border border-slate-700/90 text-slate-200 hover:text-white shadow-xl backdrop-blur-md active:scale-95 transition cursor-pointer group"
+        title="Open Navigation Menu"
+      >
+        <Menu className="w-4 h-4 text-amber-400 group-hover:scale-110 transition-transform" />
+        <span className="text-xs font-bold hidden sm:inline">Menu</span>
+        <span
+          className={`w-2 h-2 rounded-full ${
+            isOnline ? 'bg-emerald-400' : 'bg-red-500 animate-pulse'
+          }`}
+          title={isOnline ? 'Online' : 'Offline'}
+        />
+      </button>
 
       {/* Slide-out Navigation Sidebar Drawer */}
       {isSidebarOpen && (
@@ -233,19 +144,37 @@ export default function Header() {
 
             {/* Current Staff Info Card */}
             <div className="p-3.5 mx-3 mt-3 bg-slate-850 rounded-xl border border-slate-800">
-              <div className="text-[10px] uppercase font-bold text-slate-400 tracking-wider mb-1">
-                Active Operator
+              <div className="flex items-center justify-between mb-1.5">
+                <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">
+                  Active Operator
+                </span>
+                <span className={`px-2 py-0.5 text-[10px] font-extrabold uppercase rounded-md border ${
+                  isSystemAdmin 
+                    ? 'border-amber-500/40 bg-amber-500/15 text-amber-300' 
+                    : role === 'admin' 
+                    ? 'border-purple-500/40 bg-purple-500/15 text-purple-300' 
+                    : 'border-slate-700 bg-slate-800 text-slate-300'
+                }`}>
+                  {isSystemAdmin ? 'SYS ADMIN' : role === 'admin' ? 'ADMIN' : (role || 'USER')}
+                </span>
               </div>
               <div className="flex items-center space-x-2.5">
-                <div className="w-8 h-8 rounded-full bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-amber-400 font-bold text-xs">
+                <div className="w-9 h-9 rounded-full bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-amber-400 font-bold text-sm">
                   {user?.fullName?.charAt(0)?.toUpperCase() || 'U'}
                 </div>
                 <div className="min-w-0 flex-1">
-                  <div className="text-xs font-bold text-white truncate">
-                    {user?.fullName || user?.employeeCode || 'User'}
+                  <div className="text-xs font-bold text-white truncate flex items-center space-x-1">
+                    <span>{user?.fullName || user?.employeeCode || 'User'}</span>
+                    {isSystemAdmin ? (
+                      <Crown className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                    ) : role === 'admin' ? (
+                      <ShieldCheck className="w-3.5 h-3.5 text-purple-400 shrink-0" />
+                    ) : (
+                      <UserCircle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                    )}
                   </div>
                   <div className="text-[10px] text-slate-400 font-mono">
-                    ID: {user?.employeeCode || 'N/A'} • <span className="uppercase text-amber-400">{role || 'staff'}</span>
+                    ID: {user?.employeeCode || 'N/A'}
                   </div>
                 </div>
               </div>

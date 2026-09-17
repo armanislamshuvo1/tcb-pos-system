@@ -475,7 +475,7 @@ export default function StaffTabsPage() {
     <div className="min-h-screen bg-slate-950 text-white flex flex-col">
       <Header />
 
-      <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 space-y-6">
+      <main className="flex-1 max-w-7xl w-full mx-auto p-4 pt-14 sm:p-6 space-y-6">
         {/* Header & Metrics */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-slate-800 pb-4">
           <div>
