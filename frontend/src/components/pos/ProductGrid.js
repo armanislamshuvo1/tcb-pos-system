@@ -19,7 +19,7 @@ export default function ProductGrid({ products, onAddToCart }) {
   }
 
   return (
-    <div className="grid grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-2.5 sm:gap-3">
+    <div className="grid grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-2.5 sm:gap-3 touch-pan-y">
       {products.map((product) => {
         const priceFormatted = (product.priceInCents / 100).toFixed(2);
         const categoryColor = product.categoryId?.colorCode || '#3B82F6';
@@ -39,7 +39,7 @@ export default function ProductGrid({ products, onAddToCart }) {
             key={product._id}
             type="button"
             onClick={() => onAddToCart(product)}
-            className="group relative flex flex-col justify-between p-3.5 bg-slate-800/80 hover:bg-slate-750 active:scale-[0.98] border border-slate-700/70 hover:border-amber-500/80 rounded-2xl text-left transition-all duration-150 shadow-sm hover:shadow-md cursor-pointer select-none"
+            className="group relative flex flex-col justify-between p-3.5 bg-slate-800/80 hover:bg-slate-750 active:scale-[0.98] border border-slate-700/70 hover:border-amber-500/80 rounded-2xl text-left transition-all duration-150 shadow-sm hover:shadow-md cursor-pointer select-none touch-pan-y"
           >
             {/* Top Row: Category tag, Discount badge and SKU */}
             <div className="flex items-center justify-between w-full mb-2">

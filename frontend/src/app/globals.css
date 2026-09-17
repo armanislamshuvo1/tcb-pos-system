@@ -26,23 +26,28 @@ body {
 }
 
 /* Custom smooth scrollbars for POS interface */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(148, 163, 184, 0.4) rgba(15, 23, 42, 0.6);
+}
+
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 8px;
+  height: 8px;
 }
 
 ::-webkit-scrollbar-track {
   background: rgba(15, 23, 42, 0.6);
-  border-radius: 9999px;
+  border-radius: 8px;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(100, 116, 139, 0.45);
-  border-radius: 9999px;
+  background: rgba(148, 163, 184, 0.45);
+  border-radius: 8px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(245, 158, 11, 0.8);
+  background: rgba(245, 158, 11, 0.85);
 }
 
 .no-scrollbar::-webkit-scrollbar {

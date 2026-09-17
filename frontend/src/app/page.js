@@ -179,12 +179,12 @@ export default function PosPage() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-white flex flex-col">
+    <div className="h-screen max-h-screen bg-slate-950 text-white flex flex-col overflow-hidden">
       <Header />
 
       {/* Mobile Device Notice - Displayed only on screens smaller than tablet (< md / 768px) */}
-      <div className="block md:hidden flex-1 p-4 flex flex-col items-center justify-center text-center">
-        <div className="max-w-md w-full bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-5">
+      <div className="block md:hidden flex-1 p-4 flex flex-col items-center justify-center text-center overflow-y-auto">
+        <div className="max-w-md w-full bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-5 my-auto">
           <div className="w-16 h-16 mx-auto rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400">
             <Monitor className="w-8 h-8" />
           </div>
@@ -232,7 +232,7 @@ export default function PosPage() {
       </div>
 
       {/* Side-by-Side Layout for Tablet and PC (md breakpoint and up) */}
-      <main className="hidden md:flex flex-1 w-full max-w-[1750px] mx-auto p-3 sm:p-4 gap-3 sm:gap-4 h-[calc(100vh-3.75rem)] overflow-hidden">
+      <main className="hidden md:flex flex-1 min-h-0 w-full max-w-[1750px] mx-auto p-3 sm:p-4 gap-3 sm:gap-4 overflow-hidden">
         {/* Left Column: Product Catalog & Search (Products on the left) */}
         <div className="w-7/12 lg:w-7/12 xl:w-3/5 flex flex-col h-full min-h-0 overflow-hidden space-y-2.5 sm:space-y-3">
           {/* Quick Search */}
@@ -246,7 +246,7 @@ export default function PosPage() {
           />
 
           {/* Touch-First Product Grid */}
-          <div className="flex-1 min-h-0 overflow-y-auto pr-1.5 pb-8 overscroll-contain">
+          <div className="flex-1 min-h-0 overflow-y-auto pr-2 pb-12 touch-pan-y">
             {loading ? (
               <div className="flex items-center justify-center h-64 text-slate-400 text-sm">
                 Loading product catalog...
