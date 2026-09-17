@@ -218,9 +218,9 @@ export default function ActiveTicket({
   return (
     <div className="flex flex-col h-full bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
       {/* Top Header: Tab Assignment Switcher (Customer Bill vs. Room Bill vs. Staff Tab) */}
-      <div className="p-3.5 bg-slate-850 border-b border-slate-800 relative z-30 space-y-2.5">
+      <div className="p-2.5 sm:p-3 bg-slate-850 border-b border-slate-800 relative z-30 space-y-2">
         <div className="flex items-center justify-between">
-          <span className="text-xs font-bold uppercase tracking-wider text-slate-400">
+          <span className="text-[11px] sm:text-xs font-bold uppercase tracking-wider text-slate-400">
             Tab / Bill Assignment
           </span>
 
@@ -229,13 +229,13 @@ export default function ActiveTicket({
             <button
               type="button"
               onClick={() => setTabType('CUSTOMER')}
-              className={`px-3 py-1 rounded-md text-xs font-bold transition flex items-center space-x-1.5 cursor-pointer ${
+              className={`px-2 py-0.5 sm:px-3 sm:py-1 rounded-md text-[11px] sm:text-xs font-bold transition flex items-center space-x-1 sm:space-x-1.5 cursor-pointer ${
                 tabType === 'CUSTOMER'
                   ? 'bg-amber-500 text-black shadow-sm'
                   : 'text-slate-400 hover:text-white'
               }`}
             >
-              <UserCheck className="w-3.5 h-3.5" />
+              <UserCheck className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
               <span>Customer</span>
             </button>
 
@@ -361,9 +361,9 @@ export default function ActiveTicket({
       </div>
 
       {/* Cart Items List */}
-      <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-2.5 divide-y divide-slate-800/60">
+      <div className="flex-1 min-h-[90px] overflow-y-auto p-2.5 sm:p-3.5 space-y-2 divide-y divide-slate-800/60">
         {items.length === 0 ? (
-          <div className="h-full flex flex-col items-center justify-center text-slate-500 text-sm space-y-2 py-12">
+          <div className="h-full flex flex-col items-center justify-center text-slate-500 text-sm space-y-2 py-10">
             <Tag className="w-8 h-8 text-slate-600" />
             <span>Active ticket is empty</span>
             <span className="text-xs text-slate-600">Select items from the catalog to build cart</span>
@@ -381,16 +381,45 @@ export default function ActiveTicket({
               : '';
 
             return (
-              <div key={item.productId} className="pt-2.5 first:pt-0">
-                <div className="flex items-start justify-between">
-                  <div className="flex-1 pr-2">
-                    <div className="text-sm font-semibold text-white leading-snug">
-                      {item.productNameSnapshot}
+              <div key={item.productId} className="pt-2 first:pt-0">
+                <div className="flex items-start justify-between gap-1.5">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center flex-wrap gap-1.5">
+                      <span className="text-sm font-semibold text-white leading-snug">
+                        {item.productNameSnapshot}
+                      </span>
+                      {/* Prominent discount badge in row 1 for instant visibility */}
+                      {hasDiscount ? (
+                        <button
+                          type="button"
+                          onClick={() => setLineDiscount(item.productId, 'none', 0)}
+                          className="text-[10px] px-1.5 py-0.5 rounded border border-emerald-700 bg-emerald-950/90 text-emerald-300 font-bold hover:bg-emerald-900 active:scale-95 flex items-center space-x-1 transition cursor-pointer shadow-sm"
+                          title="Discount applied. Click to remove discount"
+                        >
+                          <Tag className="w-2.5 h-2.5 text-emerald-400" />
+                          <span>
+                            {item.lineDiscountType === 'fixed_cents'
+                              ? `-${formatCurrency(item.lineDiscountValue, currency)}`
+                              : `-${item.lineDiscountValue}%`}
+                          </span>
+                          <X className="w-2.5 h-2.5 text-emerald-400 hover:text-red-400" />
+                        </button>
+                      ) : hasProductDiscount ? (
+                        <button
+                          type="button"
+                          onClick={() => setLineDiscount(item.productId, item.productDiscountType, item.productDiscountValue)}
+                          className="text-[10px] px-1.5 py-0.5 rounded border border-dashed border-amber-500/80 bg-amber-500/20 text-amber-300 hover:bg-amber-500/30 active:scale-95 flex items-center space-x-1 transition cursor-pointer font-bold shadow-sm"
+                          title={`Click to apply -${productDiscLabel}`}
+                        >
+                          <Tag className="w-2.5 h-2.5 text-amber-400" />
+                          <span>+ Disc -{productDiscLabel}</span>
+                        </button>
+                      ) : null}
                     </div>
                     <div className="text-xs text-slate-400 mt-0.5 flex items-center flex-wrap gap-1.5">
                       <span>{unitPriceFormatted} ea</span>
                       {hasDiscount && (
-                        <span className="text-emerald-400 font-medium">
+                        <span className="text-emerald-400 font-medium text-[11px]">
                           {item.quantity > 1 ? (
                             item.lineDiscountType === 'fixed_cents'
                               ? `(-${formatCurrency(item.lineDiscountValue, currency)} ea • -${formatCurrency(item.lineDiscountInCents, currency)} total)`
@@ -403,7 +432,7 @@ export default function ActiveTicket({
                     </div>
                   </div>
 
-                  <div className="text-right">
+                  <div className="text-right shrink-0">
                     <span className="text-sm font-bold text-white">{lineTotalFormatted}</span>
                   </div>
                 </div>
@@ -592,8 +621,8 @@ export default function ActiveTicket({
 
       {/* Preset 1-Click Discounts */}
       {presetDiscounts && presetDiscounts.length > 0 && items.length > 0 && (
-        <div className="px-4 py-2.5 bg-slate-850 border-t border-slate-800">
-          <div className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1.5 flex items-center justify-between">
+        <div className="px-3 py-1.5 sm:px-4 sm:py-2 bg-slate-850 border-t border-slate-800">
+          <div className="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1 flex items-center justify-between">
             <span>Quick Discounts</span>
             {globalDiscount?.value > 0 && (
               <button
@@ -605,13 +634,13 @@ export default function ActiveTicket({
               </button>
             )}
           </div>
-          <div className="flex flex-wrap gap-1.5">
+          <div className="flex flex-wrap gap-1">
             {presetDiscounts.map((preset) => (
               <button
                 key={preset._id}
                 type="button"
                 onClick={() => handleApplyPreset(preset)}
-                className="px-2.5 py-1 bg-slate-800 hover:bg-slate-750 border border-slate-700 rounded-lg text-xs font-semibold text-slate-200 active:scale-95 transition cursor-pointer"
+                className="px-2 py-0.5 sm:px-2.5 sm:py-1 bg-slate-800 hover:bg-slate-750 border border-slate-700 rounded-lg text-[11px] sm:text-xs font-semibold text-slate-200 active:scale-95 transition cursor-pointer"
               >
                 {preset.name}
               </button>
@@ -622,14 +651,14 @@ export default function ActiveTicket({
 
       {/* Error Message */}
       {errorMessage && (
-        <div className="px-4 py-2 bg-red-950/80 border-t border-red-800 text-red-300 text-xs flex items-center space-x-2">
+        <div className="px-3 py-1.5 bg-red-950/80 border-t border-red-800 text-red-300 text-xs flex items-center space-x-2">
           <AlertCircle className="w-4 h-4 shrink-0" />
           <span>{errorMessage}</span>
         </div>
       )}
 
       {/* Financial Totals */}
-      <div className="p-4 bg-slate-850 border-t border-slate-800 space-y-1.5 text-sm">
+      <div className="p-2.5 sm:p-3.5 bg-slate-850 border-t border-slate-800 space-y-1 text-xs sm:text-sm">
         <div className="flex justify-between text-slate-400">
           <span>Subtotal ({totals.itemCount} items)</span>
           <span>{formatCurrency(totals.rawSubtotalInCents, currency)}</span>
@@ -640,27 +669,27 @@ export default function ActiveTicket({
             <span>-{formatCurrency(totals.totalDiscountInCents, currency)}</span>
           </div>
         )}
-        <div className="flex justify-between text-white font-extrabold text-lg pt-1 border-t border-slate-700/60">
+        <div className="flex justify-between text-white font-extrabold text-base sm:text-lg pt-1 border-t border-slate-700/60">
           <span>TOTAL DUE</span>
           <span className="text-amber-400">{formatCurrency(totals.grandTotalInCents, currency)}</span>
         </div>
       </div>
 
       {/* Action Buttons Triggering Confirmation Modal */}
-      <div className="p-4 bg-slate-900 border-t border-slate-800 grid grid-cols-2 gap-2">
+      <div className="p-2.5 sm:p-3 bg-slate-900 border-t border-slate-800 grid grid-cols-2 gap-1.5 sm:gap-2">
         {/* Hold Tab Button (Dynamic to Customer, Room, or Staff) */}
         <button
           type="button"
           disabled={checkoutLoading || items.length === 0}
           onClick={() => initiateCheckout('UNPAID_TAB', 'TAB_DEFERRED')}
-          className={`col-span-2 py-3 px-4 rounded-xl font-bold text-sm flex items-center justify-center space-x-2 transition shadow-lg cursor-pointer ${
+          className={`col-span-2 py-2 sm:py-2.5 px-3 rounded-xl font-bold text-xs sm:text-sm flex items-center justify-center space-x-1.5 transition shadow-lg cursor-pointer ${
             (tabType === 'CUSTOMER' && customer) || (tabType === 'STAFF' && staffMember) || (tabType === 'ROOM' && selectedRoomNumber)
               ? 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white shadow-blue-500/20 active:scale-[0.99]'
               : 'bg-slate-800 text-slate-300 hover:bg-slate-750 border border-slate-700'
           }`}
         >
-          <Clock className="w-4 h-4" />
-          <span>
+          <Clock className="w-3.5 h-3.5" />
+          <span className="truncate">
             {tabType === 'CUSTOMER'
               ? (customer?.name
                   ? `HOLD AS CUSTOMER BILL (${customer.name})`
@@ -680,9 +709,9 @@ export default function ActiveTicket({
           type="button"
           disabled={checkoutLoading || items.length === 0}
           onClick={() => initiateCheckout('PAID', 'CASH')}
-          className="py-3 px-4 rounded-xl font-extrabold text-sm bg-emerald-600 hover:bg-emerald-500 active:scale-[0.99] text-white flex items-center justify-center space-x-1.5 shadow-lg shadow-emerald-600/20 disabled:opacity-50 transition cursor-pointer"
+          className="py-2 sm:py-2.5 px-3 rounded-xl font-extrabold text-xs sm:text-sm bg-emerald-600 hover:bg-emerald-500 active:scale-[0.99] text-white flex items-center justify-center space-x-1.5 shadow-lg shadow-emerald-600/20 disabled:opacity-50 transition cursor-pointer"
         >
-          <DollarSign className="w-4 h-4" />
+          <DollarSign className="w-3.5 h-3.5" />
           <span>CASH</span>
         </button>
 
@@ -691,9 +720,9 @@ export default function ActiveTicket({
           type="button"
           disabled={checkoutLoading || items.length === 0}
           onClick={() => initiateCheckout('PAID', 'CARD')}
-          className="py-3 px-4 rounded-xl font-extrabold text-sm bg-amber-500 hover:bg-amber-400 active:scale-[0.99] text-black flex items-center justify-center space-x-1.5 shadow-lg shadow-amber-500/20 disabled:opacity-50 transition cursor-pointer"
+          className="py-2 sm:py-2.5 px-3 rounded-xl font-extrabold text-xs sm:text-sm bg-amber-500 hover:bg-amber-400 active:scale-[0.99] text-black flex items-center justify-center space-x-1.5 shadow-lg shadow-amber-500/20 disabled:opacity-50 transition cursor-pointer"
         >
-          <CreditCard className="w-4 h-4" />
+          <CreditCard className="w-3.5 h-3.5" />
           <span>CARD</span>
         </button>
       </div>
