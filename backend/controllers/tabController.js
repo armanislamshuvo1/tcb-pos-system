@@ -1,4 +1,5 @@
 const Transaction = require('../models/Transaction');
+const User = require('../models/User');
 const mongoose = require('mongoose');
 const { broadcastUpdate } = require('../utils/sseBroadcaster');
 
@@ -754,6 +755,221 @@ exports.getAllUnpaidBills = async (req, res, next) => {
       success: true,
       count: bills.length,
       data: bills
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Revert accidentally settled transactions back to UNPAID_TAB
+// @route   POST /api/tabs/revert-settlement
+// @route   POST /api/transactions/:id/revert-settlement
+// @access  Authenticated (requires cashier/admin PIN)
+exports.revertSettlement = async (req, res, next) => {
+  const session = await mongoose.startSession();
+  session.startTransaction();
+
+  try {
+    const transactionIdParam = req.params?.id;
+    const { transactionIds, transactionId, pinCode, reason } = req.body;
+
+    const targetIds = (
+      Array.isArray(transactionIds) && transactionIds.length > 0
+        ? transactionIds
+        : [transactionId || transactionIdParam].filter(Boolean)
+    );
+
+    if (targetIds.length === 0) {
+      await session.abortTransaction();
+      session.endSession();
+      return res.status(400).json({
+        success: false,
+        message: 'No transaction specified for settlement reversal'
+      });
+    }
+
+    if (!pinCode || !pinCode.toString().trim()) {
+      await session.abortTransaction();
+      session.endSession();
+      return res.status(400).json({
+        success: false,
+        message: 'PIN confirmation is required to revert a settled bill'
+      });
+    }
+
+    if (!reason || !reason.trim()) {
+      await session.abortTransaction();
+      session.endSession();
+      return res.status(400).json({
+        success: false,
+        message: 'A reason is required to revert a settled bill'
+      });
+    }
+
+    // Verify cashier/staff PIN
+    const userId = req.user.mongoId || req.user._id;
+    const currentUser = await User.findById(userId);
+    if (!currentUser) {
+      await session.abortTransaction();
+      session.endSession();
+      return res.status(404).json({
+        success: false,
+        message: 'Staff user profile not found'
+      });
+    }
+
+    const isPinValid = await currentUser.comparePin(pinCode.toString().trim());
+    if (!isPinValid) {
+      await session.abortTransaction();
+      session.endSession();
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid PIN code. Revert settlement rejected.'
+      });
+    }
+
+    // Fetch transactions
+    const query = { _id: { $in: targetIds } };
+    if (req.user && req.user.role !== 'system_admin' && req.user.companyId) {
+      query.$or = [
+        { companyId: new mongoose.Types.ObjectId(req.user.companyId) },
+        { companyId: null }
+      ];
+    }
+
+    const transactions = await Transaction.find(query).session(session);
+
+    if (transactions.length !== targetIds.length) {
+      await session.abortTransaction();
+      session.endSession();
+      return res.status(404).json({
+        success: false,
+        message: 'One or more selected transactions do not exist'
+      });
+    }
+
+    // Validate transaction states
+    for (const txn of transactions) {
+      if (txn.status === 'VOIDED') {
+        await session.abortTransaction();
+        session.endSession();
+        return res.status(400).json({
+          success: false,
+          message: `Transaction ${txn.txnNumber} is voided and cannot be reverted`
+        });
+      }
+      if (txn.status === 'UNPAID_TAB') {
+        await session.abortTransaction();
+        session.endSession();
+        return res.status(400).json({
+          success: false,
+          message: `Transaction ${txn.txnNumber} is already an unpaid bill`
+        });
+      }
+    }
+
+    const revertedAt = new Date();
+    const staffName = currentUser.fullName;
+    const revertReasonTrimmed = reason.trim();
+
+    // Revert each transaction atomically
+    for (const txn of transactions) {
+      const prevPaymentMethod = txn.paymentMethod;
+      txn.previousPaymentMethod = prevPaymentMethod;
+      txn.status = 'UNPAID_TAB';
+      txn.paymentMethod = 'TAB_DEFERRED';
+      txn.settledAt = undefined;
+      txn.settledByCashierId = undefined;
+      txn.settledByCashierNameSnapshot = undefined;
+      txn.revertedSettlementAt = revertedAt;
+      txn.revertedByUserId = currentUser._id;
+      txn.revertedByStaffName = staffName;
+      txn.revertReason = revertReasonTrimmed;
+
+      const auditNote = `[Settlement Reverted from ${prevPaymentMethod} by ${staffName} on ${revertedAt.toLocaleString()}: ${revertReasonTrimmed}]`;
+      txn.notes = txn.notes ? `${txn.notes}\n${auditNote}` : auditNote;
+
+      await txn.save({ session });
+    }
+
+    await session.commitTransaction();
+    session.endSession();
+
+    // Broadcast SSE update across all cashier terminals
+    broadcastUpdate('settlement_reverted', {
+      transactionIds: targetIds,
+      revertedAt,
+      revertedBy: staffName,
+      reason: revertReasonTrimmed,
+      count: transactions.length
+    });
+    broadcastUpdate('tabs_settled', {
+      transactionIds: targetIds,
+      reverted: true
+    });
+
+    res.status(200).json({
+      success: true,
+      message: `Successfully reverted ${transactions.length} settled transaction(s) back to unpaid tab`,
+      data: {
+        revertedCount: transactions.length,
+        transactionIds: targetIds,
+        revertedAt,
+        revertedBy: staffName,
+        transactions
+      }
+    });
+  } catch (error) {
+    await session.abortTransaction();
+    session.endSession();
+    next(error);
+  }
+};
+
+// @desc    Get recently settled bills (to easily inspect and revert mistakes)
+// @route   GET /api/tabs/settled
+// @access  Authenticated
+exports.getRecentlySettledBills = async (req, res, next) => {
+  try {
+    const { search, limit = 50 } = req.query;
+    const matchStage = {
+      status: 'PAID',
+      settledAt: { $exists: true, $ne: null }
+    };
+
+    if (req.user?.companyId && req.user.role !== 'system_admin') {
+      matchStage.$or = [
+        { companyId: new mongoose.Types.ObjectId(req.user.companyId) },
+        { companyId: null }
+      ];
+    }
+
+    if (search && search.trim()) {
+      const q = search.trim();
+      const searchRegex = { $regex: q, $options: 'i' };
+      matchStage.$and = matchStage.$and || [];
+      matchStage.$and.push({
+        $or: [
+          { txnNumber: searchRegex },
+          { customerName: searchRegex },
+          { roomNumber: searchRegex },
+          { guestName: searchRegex },
+          { staffNameSnapshot: searchRegex },
+          { settledByCashierNameSnapshot: searchRegex },
+          { 'items.productNameSnapshot': searchRegex }
+        ]
+      });
+    }
+
+    const settledBills = await Transaction.find(matchStage)
+      .sort({ settledAt: -1 })
+      .limit(Number(limit))
+      .lean();
+
+    res.status(200).json({
+      success: true,
+      count: settledBills.length,
+      data: settledBills
     });
   } catch (error) {
     next(error);

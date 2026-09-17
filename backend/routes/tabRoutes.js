@@ -11,6 +11,8 @@ router.get('/rooms/:roomNumber/transactions', authenticateToken, tabController.g
 router.get('/customers', authenticateToken, tabController.getConsolidatedCustomerTabs);
 router.get('/customers/:customerName/transactions', authenticateToken, tabController.getCustomerOpenTransactions);
 router.get('/staff/:staffId/transactions', authenticateToken, tabController.getStaffOpenTransactions);
+router.get('/settled', authenticateToken, tabController.getRecentlySettledBills);
 router.post('/settle-transactions', authenticateToken, tabController.settleTransactions);
+router.post('/revert-settlement', authenticateToken, tabController.revertSettlement);
 
 module.exports = router;

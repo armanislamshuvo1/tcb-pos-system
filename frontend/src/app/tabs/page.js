@@ -21,15 +21,17 @@ import {
   Search,
   BedDouble,
   UserCheck,
-  Building
+  Building,
+  RotateCcw
 } from 'lucide-react';
 import { ROOM_WINGS, isDormRoom, getRoomByNumber } from '../../utils/rooms';
+import RevertSettlementModal from '../../components/RevertSettlementModal';
 
 export default function StaffTabsPage() {
   const axiosSecure = useAxiosSecure();
   const { currency } = useAuth();
   
-  // View state: 'all' | 'by_customer' | 'by_room' | 'by_staff' | 'by_product'
+  // View state: 'all' | 'by_customer' | 'by_room' | 'by_staff' | 'by_product' | 'recently_settled'
   const [viewMode, setViewMode] = useState('all');
 
   // All Unpaid / Hold Bills State (Customer bills + Room bills + Staff tabs)
@@ -89,7 +91,33 @@ export default function StaffTabsPage() {
   const [roomPaymentMethod, setRoomPaymentMethod] = useState('CASH');
   const [roomSettleLoading, setRoomSettleLoading] = useState(false);
 
+  // Recently Settled Bills State
+  const [settledBills, setSettledBills] = useState([]);
+  const [settledLoading, setSettledLoading] = useState(false);
+  const [settledSearchTerm, setSettledSearchTerm] = useState('');
+  const [expandedSettledBillIds, setExpandedSettledBillIds] = useState({});
+  const [revertModalTxn, setRevertModalTxn] = useState(null);
+  const [showRevertModal, setShowRevertModal] = useState(false);
+
   const [feedback, setFeedback] = useState(null);
+
+  const fetchSettledBills = async (search = '') => {
+    try {
+      setSettledLoading(true);
+      const params = { limit: 50 };
+      if (search && search.trim()) {
+        params.search = search.trim();
+      }
+      const res = await axiosSecure.get('/api/tabs/settled', { params });
+      if (res.data?.success) {
+        setSettledBills(res.data.data);
+      }
+    } catch (err) {
+      console.error('Failed to load recently settled bills:', err);
+    } finally {
+      setSettledLoading(false);
+    }
+  };
 
   const fetchAllBills = async (search = '', billType = 'ALL') => {
     try {
@@ -186,6 +214,7 @@ export default function StaffTabsPage() {
     fetchConsolidatedTabs();
     fetchRoomTabs();
     fetchTabsByProduct();
+    fetchSettledBills();
   }, [axiosSecure]);
 
   // Real-time debounced query for all bills view
@@ -228,8 +257,25 @@ export default function StaffTabsPage() {
     }
   }, [productSearchTerm, viewMode, axiosSecure]);
 
+  // Real-time debounced query for recently settled view
+  useEffect(() => {
+    if (viewMode === 'recently_settled') {
+      const timer = setTimeout(() => {
+        fetchSettledBills(settledSearchTerm);
+      }, 250);
+      return () => clearTimeout(timer);
+    }
+  }, [settledSearchTerm, viewMode, axiosSecure]);
+
   const toggleAllBillAccordion = (billId) => {
     setExpandedAllBillIds((prev) => ({
+      ...prev,
+      [billId]: !prev[billId]
+    }));
+  };
+
+  const toggleSettledBillAccordion = (billId) => {
+    setExpandedSettledBillIds((prev) => ({
       ...prev,
       [billId]: !prev[billId]
     }));
@@ -313,7 +359,8 @@ export default function StaffTabsPage() {
       fetchCustomerTabs(customerSearchTerm),
       fetchRoomTabs(roomSearchTerm),
       fetchConsolidatedTabs(),
-      fetchTabsByProduct(productSearchTerm)
+      fetchTabsByProduct(productSearchTerm),
+      fetchSettledBills(settledSearchTerm)
     ]);
   };
 
@@ -343,9 +390,13 @@ export default function StaffTabsPage() {
       });
 
       if (res.data?.success) {
+        const settledData = res.data.data;
         setFeedback({
           type: 'success',
-          message: `Successfully settled ${res.data.data.settledCount} transaction(s) (${formatCurrency(res.data.data.totalSettledInCents, currency)}) via ${paymentMethod}`
+          message: `Successfully settled ${settledData.settledCount} transaction(s) (${formatCurrency(settledData.totalSettledInCents, currency)}) via ${paymentMethod}`,
+          lastSettledTxnIds: [...selectedTxnIds],
+          lastSettledAmount: settledData.totalSettledInCents,
+          lastPaymentMethod: paymentMethod
         });
         await refreshAllTabsData();
         setSettleModalStaff(null);
@@ -408,9 +459,13 @@ export default function StaffTabsPage() {
       });
 
       if (res.data?.success) {
+        const settledData = res.data.data;
         setFeedback({
           type: 'success',
-          message: `Successfully settled ${res.data.data.settledCount} transaction(s) (${formatCurrency(res.data.data.totalSettledInCents, currency)}) for Room ${settleModalRoom.roomNumber}${settleModalRoom.guestName ? ` (${settleModalRoom.guestName})` : ''} via ${roomPaymentMethod}`
+          message: `Successfully settled ${settledData.settledCount} transaction(s) (${formatCurrency(settledData.totalSettledInCents, currency)}) for Room ${settleModalRoom.roomNumber}${settleModalRoom.guestName ? ` (${settleModalRoom.guestName})` : ''} via ${roomPaymentMethod}`,
+          lastSettledTxnIds: [...selectedRoomTxnIds],
+          lastSettledAmount: settledData.totalSettledInCents,
+          lastPaymentMethod: roomPaymentMethod
         });
         await refreshAllTabsData();
         setSettleModalRoom(null);
@@ -471,9 +526,13 @@ export default function StaffTabsPage() {
       });
 
       if (res.data?.success) {
+        const settledData = res.data.data;
         setFeedback({
           type: 'success',
-          message: `Successfully settled ${res.data.data.settledCount} transaction(s) (${formatCurrency(res.data.data.totalSettledInCents, currency)}) for customer "${settleModalCustomer.customerName}" via ${customerPaymentMethod}`
+          message: `Successfully settled ${settledData.settledCount} transaction(s) (${formatCurrency(settledData.totalSettledInCents, currency)}) for customer "${settleModalCustomer.customerName}" via ${customerPaymentMethod}`,
+          lastSettledTxnIds: [...selectedCustomerTxnIds],
+          lastSettledAmount: settledData.totalSettledInCents,
+          lastPaymentMethod: customerPaymentMethod
         });
         await refreshAllTabsData();
         setSettleModalCustomer(null);
@@ -606,8 +665,27 @@ export default function StaffTabsPage() {
               ? 'bg-emerald-950/80 border border-emerald-800 text-emerald-300'
               : 'bg-red-950/80 border border-red-800 text-red-300'
           }`}>
-            <span>{feedback.message}</span>
-            <button onClick={() => setFeedback(null)} className="text-slate-400 hover:text-white">
+            <div className="flex items-center space-x-3 flex-wrap gap-y-2">
+              <span>{feedback.message}</span>
+              {feedback.lastSettledTxnIds && feedback.lastSettledTxnIds.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setRevertModalTxn({
+                      transactionIds: feedback.lastSettledTxnIds,
+                      grandTotalInCents: feedback.lastSettledAmount,
+                      paymentMethod: feedback.lastPaymentMethod
+                    });
+                    setShowRevertModal(true);
+                  }}
+                  className="px-3 py-1 bg-amber-500 hover:bg-amber-400 text-black text-xs font-black rounded-lg transition flex items-center space-x-1.5 cursor-pointer active:scale-95 shadow-md shadow-amber-500/20"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  <span>Undo / Revert Settlement</span>
+                </button>
+              )}
+            </div>
+            <button onClick={() => setFeedback(null)} className="text-slate-400 hover:text-white cursor-pointer ml-3">
               <X className="w-4 h-4" />
             </button>
           </div>
@@ -699,6 +777,22 @@ export default function StaffTabsPage() {
             >
               <Package className="w-4 h-4" />
               <span>Search Unpaid by Product ({productTabs.length})</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setViewMode('recently_settled');
+                fetchSettledBills(settledSearchTerm);
+              }}
+              className={`flex items-center space-x-2 px-4 py-2.5 rounded-xl font-bold text-sm transition shrink-0 ${
+                viewMode === 'recently_settled'
+                  ? 'bg-amber-500 text-black shadow-lg shadow-amber-500/20'
+                  : 'bg-slate-800/80 text-slate-300 hover:bg-slate-800 hover:text-white'
+              }`}
+            >
+              <RotateCcw className="w-4 h-4" />
+              <span>Recently Settled ({settledBills.length})</span>
             </button>
           </div>
 
@@ -1927,6 +2021,145 @@ export default function StaffTabsPage() {
           </div>
         )}
 
+        {/* View 6: Recently Settled Bills View (Mistake Recovery / Revert) */}
+        {viewMode === 'recently_settled' && (
+          <div className="space-y-4">
+            {/* Search Input & Info Banner */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-900/60 p-4 rounded-2xl border border-slate-800">
+              <div className="relative flex-1 max-w-md">
+                <Search className="w-4 h-4 absolute left-3 top-3 text-slate-400" />
+                <input
+                  type="text"
+                  value={settledSearchTerm}
+                  onChange={(e) => setSettledSearchTerm(e.target.value)}
+                  placeholder="Search settled bills by TXN #, customer, room, or staff..."
+                  className="w-full pl-9 pr-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-white placeholder-slate-400 text-xs focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                />
+              </div>
+
+              <div className="text-xs text-slate-400 flex items-center space-x-2">
+                <span className="w-2 h-2 rounded-full bg-amber-400"></span>
+                <span>Showing last <strong>{settledBills.length}</strong> settled transactions</span>
+              </div>
+            </div>
+
+            {/* Settled Bills List */}
+            {settledLoading ? (
+              <div className="p-8 text-center text-slate-400">Loading recently settled bills...</div>
+            ) : settledBills.length === 0 ? (
+              <div className="p-12 text-center text-slate-500 bg-slate-900/40 rounded-2xl border border-slate-800 space-y-2">
+                <RotateCcw className="w-8 h-8 mx-auto text-slate-600 opacity-50" />
+                <p className="font-semibold text-slate-400">No settled bills found</p>
+                <p className="text-xs text-slate-500">Bills settled today or matching your search will appear here.</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {settledBills.map((bill) => {
+                  const settledDate = bill.settledAt ? new Date(bill.settledAt) : new Date(bill.updatedAt);
+                  const isExpanded = !!expandedSettledBillIds[bill._id];
+
+                  return (
+                    <div
+                      key={bill._id}
+                      className="bg-slate-900 border border-slate-800 hover:border-slate-700/80 rounded-2xl p-4 transition space-y-3"
+                    >
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        <div className="flex items-start sm:items-center space-x-3 flex-wrap gap-y-2">
+                          <div className="flex items-center space-x-2">
+                            <span className="text-xs font-mono font-black text-amber-400">
+                              {bill.txnNumber}
+                            </span>
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold border bg-emerald-950/80 text-emerald-400 border-emerald-800">
+                              SETTLED ({bill.paymentMethod})
+                            </span>
+                          </div>
+
+                          {/* Customer / Room / Staff badges */}
+                          {bill.customerName && (
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-500/10 text-blue-300 border border-blue-500/30">
+                              Customer: {bill.customerName}
+                            </span>
+                          )}
+                          {bill.roomNumber && (
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-500/10 text-amber-300 border border-amber-500/30">
+                              Room: {bill.roomNumber} {bill.guestName ? `(${bill.guestName})` : ''}
+                            </span>
+                          )}
+                          {bill.staffNameSnapshot && (
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-purple-500/10 text-purple-300 border border-purple-500/30">
+                              Staff: {bill.staffNameSnapshot}
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Amount & Revert Action */}
+                        <div className="flex items-center space-x-3 self-end sm:self-auto">
+                          <div className="text-right font-mono">
+                            <div className="text-base font-black text-white">
+                              {formatCurrency(bill.grandTotalInCents, currency)}
+                            </div>
+                            <div className="text-[10px] text-slate-400">
+                              {bill.items?.length || 0} items
+                            </div>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setRevertModalTxn(bill);
+                              setShowRevertModal(true);
+                            }}
+                            className="px-3.5 py-2 bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 hover:text-amber-200 border border-amber-500/30 rounded-xl text-xs font-bold transition flex items-center space-x-1.5 cursor-pointer active:scale-95 shadow-sm"
+                            title="Revert settlement and return bill to unpaid tab"
+                          >
+                            <RotateCcw className="w-3.5 h-3.5 text-amber-400" />
+                            <span>Revert Settlement</span>
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Audit Details & Items accordion toggle */}
+                      <div className="pt-2 border-t border-slate-800/60 flex items-center justify-between text-xs text-slate-400 flex-wrap gap-2">
+                        <div className="flex items-center space-x-3 text-[11px]">
+                          <span>Settled: <strong className="text-slate-300">{settledDate.toLocaleDateString()} {settledDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</strong></span>
+                          {bill.settledByCashierNameSnapshot && (
+                            <span>By: <strong className="text-slate-300">{bill.settledByCashierNameSnapshot}</strong></span>
+                          )}
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => toggleSettledBillAccordion(bill._id)}
+                          className="text-[11px] text-amber-400 hover:text-amber-300 font-semibold flex items-center space-x-1 cursor-pointer"
+                        >
+                          <span>{isExpanded ? 'Hide Items' : 'View Items'}</span>
+                          {isExpanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+                        </button>
+                      </div>
+
+                      {/* Expanded Items */}
+                      {isExpanded && bill.items && bill.items.length > 0 && (
+                        <div className="p-3 bg-slate-950/80 rounded-xl border border-slate-800 text-xs space-y-1.5">
+                          {bill.items.map((item, idx) => (
+                            <div key={item._id || idx} className="flex justify-between items-center py-1 border-b border-slate-800/40 last:border-none">
+                              <span className="text-slate-300 font-medium">
+                                {item.quantity}x {item.productNameSnapshot}
+                              </span>
+                              <span className="font-mono text-slate-200">
+                                {formatCurrency(item.finalLineTotalInCents, currency)}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Discrete Transaction Settlement Modal */}
         {settleModalStaff && (
           <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
@@ -2309,6 +2542,27 @@ export default function StaffTabsPage() {
               </div>
             </div>
           </div>
+        )}
+
+        {/* Revert Settlement Confirmation Modal */}
+        {showRevertModal && revertModalTxn && (
+          <RevertSettlementModal
+            isOpen={showRevertModal}
+            txn={revertModalTxn}
+            onClose={() => {
+              setShowRevertModal(false);
+              setRevertModalTxn(null);
+            }}
+            onRevertSuccess={async (revertData) => {
+              await refreshAllTabsData();
+              setFeedback({
+                type: 'success',
+                message: `Settlement reverted successfully for ${revertData.revertedCount} transaction(s). Reopened as Unpaid Tab.`
+              });
+              setShowRevertModal(false);
+              setRevertModalTxn(null);
+            }}
+          />
         )}
       </main>
     </div>

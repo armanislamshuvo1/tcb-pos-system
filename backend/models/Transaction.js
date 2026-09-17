@@ -120,11 +120,19 @@ const transactionSchema = new mongoose.Schema({
   voidedByStaffName: { type: String },
   voidReason: { type: String, trim: true },
 
+  // Settlement Reversion Audit Tracking
+  revertedSettlementAt: { type: Date },
+  revertedByUserId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  revertedByStaffName: { type: String },
+  revertReason: { type: String, trim: true },
+  previousPaymentMethod: { type: String },
+
   notes: { type: String }
 }, { timestamps: true });
 
 // Compound Indexes for Rapid Ledger Queries & Aggregations
 transactionSchema.index({ createdAt: -1, status: 1 });
+transactionSchema.index({ settledAt: -1, status: 1 });
 transactionSchema.index({ staffMemberId: 1, status: 1 });
 transactionSchema.index({ roomNumber: 1, status: 1 });
 transactionSchema.index({ customerId: 1, status: 1 });

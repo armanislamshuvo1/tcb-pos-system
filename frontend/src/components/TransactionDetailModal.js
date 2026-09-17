@@ -3,6 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { formatCurrency } from '../utils/currency';
 import VoidTransactionModal from './VoidTransactionModal';
+import RevertSettlementModal from './RevertSettlementModal';
 import {
   X,
   Receipt,
@@ -20,7 +21,8 @@ import {
   UserCheck,
   ShoppingBag,
   Percent,
-  Ban
+  Ban,
+  RotateCcw
 } from 'lucide-react';
 
 export default function TransactionDetailModal({ txn, onClose, onTxnUpdated }) {
@@ -28,8 +30,10 @@ export default function TransactionDetailModal({ txn, onClose, onTxnUpdated }) {
   const printRef = useRef(null);
   const [currentTxn, setCurrentTxn] = useState(txn);
   const [showVoidModal, setShowVoidModal] = useState(false);
+  const [showRevertModal, setShowRevertModal] = useState(false);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setCurrentTxn(txn);
   }, [txn]);
 
@@ -220,6 +224,44 @@ export default function TransactionDetailModal({ txn, onClose, onTxnUpdated }) {
                     &ldquo;{currentTxn.voidReason || 'No reason specified'}&rdquo;
                   </span>
                 </div>
+              </div>
+            </div>
+          )}
+
+          {/* Prominent Revert Settlement Audit Banner */}
+          {currentTxn.revertedSettlementAt && currentTxn.status === 'UNPAID_TAB' && (
+            <div className="p-4 bg-amber-950/40 border-2 border-amber-600/70 rounded-2xl flex items-start space-x-3.5 text-xs text-amber-200 print:bg-transparent print:border-black print:text-black shadow-inner">
+              <div className="w-9 h-9 rounded-xl bg-amber-500/20 text-amber-400 border border-amber-500/30 flex items-center justify-center shrink-0 mt-0.5 print:hidden">
+                <RotateCcw className="w-5 h-5" />
+              </div>
+              <div className="space-y-1.5 flex-1">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <span className="font-black uppercase tracking-wider text-xs text-amber-400 print:text-black flex items-center space-x-1.5">
+                    <span>SETTLEMENT REVERTED • BILL REOPENED</span>
+                  </span>
+                  <span className="text-[11px] text-amber-300/90 font-mono font-bold print:text-black">
+                    {new Date(currentTxn.revertedSettlementAt).toLocaleDateString()} {new Date(currentTxn.revertedSettlementAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  </span>
+                </div>
+                <div className="text-slate-300 print:text-black">
+                  <span className="text-slate-400 print:text-slate-600 font-medium">Reverted By: </span>
+                  <strong className="text-white font-bold print:text-black underline decoration-amber-500/40 underline-offset-2">
+                    {currentTxn.revertedByStaffName || 'Staff'}
+                  </strong>
+                  {currentTxn.previousPaymentMethod && (
+                    <span className="text-slate-400 text-[11px] ml-1.5">
+                      (Previous payment: <span className="text-amber-300 font-semibold">{currentTxn.previousPaymentMethod}</span>)
+                    </span>
+                  )}
+                </div>
+                {currentTxn.revertReason && (
+                  <div className="text-slate-300 print:text-black">
+                    <span className="text-slate-400 print:text-slate-600 font-medium">Revert Reason: </span>
+                    <span className="text-amber-200 font-semibold italic print:text-black bg-amber-950/60 px-2 py-0.5 rounded-lg border border-amber-800/50 print:border-none print:p-0">
+                      &ldquo;{currentTxn.revertReason}&rdquo;
+                    </span>
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -429,6 +471,18 @@ export default function TransactionDetailModal({ txn, onClose, onTxnUpdated }) {
                 <span>Void / Cancel Ticket</span>
               </button>
             )}
+
+            {currentTxn.status === 'PAID' && (
+              <button
+                type="button"
+                onClick={() => setShowRevertModal(true)}
+                className="flex items-center space-x-1.5 px-3.5 py-2.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 hover:text-amber-200 rounded-xl text-xs font-bold border border-amber-500/40 transition cursor-pointer active:scale-95 shadow-sm"
+                title="Revert settlement and reopen bill as unpaid tab"
+              >
+                <RotateCcw className="w-4 h-4 text-amber-400" />
+                <span>Revert Settlement</span>
+              </button>
+            )}
           </div>
 
           <button
@@ -450,6 +504,30 @@ export default function TransactionDetailModal({ txn, onClose, onTxnUpdated }) {
           onVoidSuccess={(updatedTxn) => {
             setCurrentTxn(updatedTxn);
             onTxnUpdated?.(updatedTxn);
+          }}
+        />
+      )}
+
+      {/* Revert Settlement Confirmation Modal */}
+      {showRevertModal && (
+        <RevertSettlementModal
+          isOpen={showRevertModal}
+          txn={currentTxn}
+          onClose={() => setShowRevertModal(false)}
+          onRevertSuccess={(revertData) => {
+            const updated = {
+              ...currentTxn,
+              status: 'UNPAID_TAB',
+              paymentMethod: 'TAB_DEFERRED',
+              settledAt: null,
+              settledByCashierId: null,
+              settledByCashierNameSnapshot: null,
+              revertedSettlementAt: revertData.revertedAt,
+              revertedByStaffName: revertData.revertedBy,
+              previousPaymentMethod: currentTxn.paymentMethod
+            };
+            setCurrentTxn(updated);
+            onTxnUpdated?.(updated);
           }}
         />
       )}
