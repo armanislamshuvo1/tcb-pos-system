@@ -4,6 +4,7 @@ const tabController = require('../controllers/tabController');
 const { authenticateToken } = require('../middleware/authMiddleware');
 
 router.get('/consolidated', authenticateToken, tabController.getConsolidatedStaffTabs);
+router.get('/all', authenticateToken, tabController.getAllUnpaidBills);
 router.get('/by-product', authenticateToken, tabController.getUnpaidTabsByProduct);
 router.get('/rooms', authenticateToken, tabController.getConsolidatedRoomTabs);
 router.get('/rooms/:roomNumber/transactions', authenticateToken, tabController.getRoomOpenTransactions);

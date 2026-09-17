@@ -217,21 +217,14 @@ exports.settleTransactions = async (req, res, next) => {
   }
 };
 
-// @desc    Get unpaid tabs grouped by product name with staff breakdown
+// @desc    Get unpaid tabs grouped by product name with customer/room/staff holder breakdown
 // @route   GET /api/tabs/by-product
 // @access  Authenticated
 exports.getUnpaidTabsByProduct = async (req, res, next) => {
   try {
     const { search } = req.query;
     const matchStage = { 
-      status: 'UNPAID_TAB',
-      staffMemberId: { $ne: null, $exists: true },
-      tabType: { $nin: ['ROOM', 'CUSTOMER'] },
-      $or: [
-        { roomNumber: { $exists: false } },
-        { roomNumber: null },
-        { roomNumber: '' }
-      ]
+      status: 'UNPAID_TAB'
     };
 
     if (req.user?.companyId && req.user.role !== 'system_admin') {
@@ -258,21 +251,38 @@ exports.getUnpaidTabsByProduct = async (req, res, next) => {
     }
 
     pipeline.push(
-      // Step 1: Group by Product Name + Staff Member
+      // Step 1: Group by Product Name + Tab/Bill Holder
       {
         $group: {
           _id: {
             productName: '$items.productNameSnapshot',
+            tabType: { 
+              $switch: {
+                branches: [
+                  { case: { $eq: ['$tabType', 'CUSTOMER'] }, then: 'CUSTOMER' },
+                  { case: { $eq: ['$tabType', 'ROOM'] }, then: 'ROOM' },
+                  { case: { $eq: ['$tabType', 'STAFF'] }, then: 'STAFF' },
+                  { case: { $ne: ['$roomNumber', null] }, then: 'ROOM' },
+                  { case: { $ne: ['$customerName', null] }, then: 'CUSTOMER' },
+                  { case: { $ne: ['$staffMemberId', null] }, then: 'STAFF' }
+                ],
+                default: 'CUSTOMER'
+              }
+            },
             staffMemberId: '$staffMemberId',
-            staffName: '$staffNameSnapshot'
+            staffName: '$staffNameSnapshot',
+            customerId: '$customerId',
+            customerName: '$customerName',
+            roomNumber: '$roomNumber',
+            guestName: '$guestName'
           },
           productId: { $first: '$items.productId' },
           sku: { $first: '$items.skuSnapshot' },
           categoryName: { $first: '$items.categoryNameSnapshot' },
           unitPriceInCents: { $last: '$items.unitPriceInCents' },
-          staffQuantity: { $sum: '$items.quantity' },
-          staffAmountInCents: { $sum: '$items.finalLineTotalInCents' },
-          staffDiscountInCents: { $sum: '$items.lineDiscountInCents' },
+          holderQuantity: { $sum: '$items.quantity' },
+          holderAmountInCents: { $sum: '$items.finalLineTotalInCents' },
+          holderDiscountInCents: { $sum: '$items.lineDiscountInCents' },
           occurrences: {
             $push: {
               transactionId: '$_id',
@@ -295,16 +305,21 @@ exports.getUnpaidTabsByProduct = async (req, res, next) => {
           sku: { $first: '$sku' },
           categoryName: { $first: '$categoryName' },
           unitPriceInCents: { $first: '$unitPriceInCents' },
-          totalUnpaidQuantity: { $sum: '$staffQuantity' },
-          totalUnpaidAmountInCents: { $sum: '$staffAmountInCents' },
-          totalDiscountInCents: { $sum: '$staffDiscountInCents' },
-          staffBreakdown: {
+          totalUnpaidQuantity: { $sum: '$holderQuantity' },
+          totalUnpaidAmountInCents: { $sum: '$holderAmountInCents' },
+          totalDiscountInCents: { $sum: '$holderDiscountInCents' },
+          holdersBreakdown: {
             $push: {
+              tabType: '$_id.tabType',
               staffMemberId: '$_id.staffMemberId',
               staffName: '$_id.staffName',
-              quantity: '$staffQuantity',
-              totalAmountInCents: '$staffAmountInCents',
-              discountInCents: '$staffDiscountInCents',
+              customerId: '$_id.customerId',
+              customerName: '$_id.customerName',
+              roomNumber: '$_id.roomNumber',
+              guestName: '$_id.guestName',
+              quantity: '$holderQuantity',
+              totalAmountInCents: '$holderAmountInCents',
+              discountInCents: '$holderDiscountInCents',
               occurrences: '$occurrences'
             }
           }
@@ -322,7 +337,8 @@ exports.getUnpaidTabsByProduct = async (req, res, next) => {
           totalUnpaidQuantity: 1,
           totalUnpaidAmountInCents: 1,
           totalDiscountInCents: 1,
-          staffBreakdown: 1
+          staffBreakdown: '$holdersBreakdown',
+          holdersBreakdown: 1
         }
       },
       // Step 4: Sort by highest unpaid quantity first, then alphabetically
@@ -695,4 +711,51 @@ exports.getCustomerOpenTransactions = async (req, res, next) => {
   }
 };
 
+// @desc    Get all open/unpaid/hold bills (Customer bills, Room bills, Staff tabs)
+// @route   GET /api/tabs/all
+// @access  Authenticated
+exports.getAllUnpaidBills = async (req, res, next) => {
+  try {
+    const { search, billType } = req.query;
+    const matchStage = { status: 'UNPAID_TAB' };
 
+    if (req.user?.companyId && req.user.role !== 'system_admin') {
+      matchStage.$or = [
+        { companyId: new mongoose.Types.ObjectId(req.user.companyId) },
+        { companyId: null }
+      ];
+    }
+
+    if (billType && billType !== 'ALL') {
+      matchStage.tabType = billType.toUpperCase();
+    }
+
+    if (search && search.trim()) {
+      const q = search.trim();
+      const searchRegex = { $regex: q, $options: 'i' };
+      matchStage.$and = matchStage.$and || [];
+      matchStage.$and.push({
+        $or: [
+          { txnNumber: searchRegex },
+          { customerName: searchRegex },
+          { roomNumber: searchRegex },
+          { guestName: searchRegex },
+          { staffNameSnapshot: searchRegex },
+          { 'items.productNameSnapshot': searchRegex }
+        ]
+      });
+    }
+
+    const bills = await Transaction.find(matchStage)
+      .sort({ createdAt: -1 })
+      .lean();
+
+    res.status(200).json({
+      success: true,
+      count: bills.length,
+      data: bills
+    });
+  } catch (error) {
+    next(error);
+  }
+};
