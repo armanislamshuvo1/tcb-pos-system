@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { useAxiosSecure } from '../hooks/useApi';
+import { useStaffQuery } from '../hooks/queries/useCatalogQueries';
 import { 
   KeyRound, 
   Lock, 
@@ -16,32 +16,23 @@ import {
 
 export default function PinLoginModal({ isOpen, onClose }) {
   const { user, loginWithPin } = useAuth();
-  const axiosSecure = useAxiosSecure();
+  const { data: activeUsers = [] } = useStaffQuery();
 
   const [employeeCode, setEmployeeCode] = useState(user?.employeeCode || '');
   const [pinCode, setPinCode] = useState('');
-  const [activeUsers, setActiveUsers] = useState([]);
   const [errorMsg, setErrorMsg] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
 
-  // Load staff list for quick selection chips
+  // Reset inputs when modal opens
   useEffect(() => {
     if (isOpen) {
       setEmployeeCode(user?.employeeCode || '');
       setPinCode('');
       setErrorMsg('');
       setSuccess(false);
-
-      axiosSecure.get('/api/staff')
-        .then((res) => {
-          if (res.data?.success) {
-            setActiveUsers(res.data.data);
-          }
-        })
-        .catch(() => {});
     }
-  }, [isOpen, axiosSecure, user]);
+  }, [isOpen, user]);
 
   // Physical keyboard numpad listener
   useEffect(() => {

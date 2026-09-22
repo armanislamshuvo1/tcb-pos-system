@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { useAxiosSecure } from '../hooks/useApi';
+import { useVoidTransactionMutation } from '../hooks/queries/useLedgerQueries';
 import { formatCurrency } from '../utils/currency';
 import {
   AlertTriangle,
@@ -27,7 +27,7 @@ const PRESET_REASONS = [
 
 export default function VoidTransactionModal({ isOpen, txn, onClose, onVoidSuccess }) {
   const { user, currency } = useAuth();
-  const axiosSecure = useAxiosSecure();
+  const voidMutation = useVoidTransactionMutation();
 
   const [reason, setReason] = useState('');
   const [pinCode, setPinCode] = useState('');
@@ -113,15 +113,16 @@ export default function VoidTransactionModal({ isOpen, txn, onClose, onVoidSucce
       setSubmitting(true);
       setErrorMsg('');
 
-      const res = await axiosSecure.post(`/api/transactions/${txn._id}/void`, {
+      const res = await voidMutation.mutateAsync({
+        txnId: txn._id,
         pinCode: pinCode.trim(),
         reason: reason.trim()
       });
 
-      if (res.data?.success) {
-        setSuccessMsg(res.data.message || 'Transaction voided successfully');
+      if (res?.success) {
+        setSuccessMsg(res.message || 'Transaction voided successfully');
         setTimeout(() => {
-          onVoidSuccess?.(res.data.data);
+          onVoidSuccess?.(res.data);
           onClose();
         }, 600);
       }

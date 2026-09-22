@@ -9,6 +9,11 @@ exports.getSalesSummary = async (req, res, next) => {
     const { startDate, endDate } = req.query;
     const matchStage = {};
 
+    // Multi-tenant isolation: Non-system admins only see their company data
+    if (req.user && req.user.role !== 'system_admin' && req.user.companyId) {
+      matchStage.companyId = new mongoose.Types.ObjectId(req.user.companyId);
+    }
+
     if (startDate || endDate) {
       matchStage.createdAt = {};
       if (startDate) matchStage.createdAt.$gte = new Date(startDate);
@@ -93,6 +98,11 @@ exports.getStaffConsumption = async (req, res, next) => {
     const { staffId, startDate, endDate } = req.query;
     const matchStage = { staffMemberId: { $ne: null }, status: { $ne: 'VOIDED' } };
 
+    // Multi-tenant isolation: Non-system admins only see their company data
+    if (req.user && req.user.role !== 'system_admin' && req.user.companyId) {
+      matchStage.companyId = new mongoose.Types.ObjectId(req.user.companyId);
+    }
+
     if (staffId) {
       matchStage.staffMemberId = new mongoose.Types.ObjectId(staffId);
     }
@@ -143,6 +153,11 @@ exports.getProductReport = async (req, res, next) => {
     const { startDate, endDate, categoryId } = req.query;
     const matchStage = { status: { $ne: 'VOIDED' } };
 
+    // Multi-tenant isolation: Non-system admins only see their company data
+    if (req.user && req.user.role !== 'system_admin' && req.user.companyId) {
+      matchStage.companyId = new mongoose.Types.ObjectId(req.user.companyId);
+    }
+
     if (startDate || endDate) {
       matchStage.createdAt = {};
       if (startDate) matchStage.createdAt.$gte = new Date(startDate);
@@ -156,7 +171,7 @@ exports.getProductReport = async (req, res, next) => {
     const report = await Transaction.aggregate([
       { $match: matchStage },
       { $unwind: '$items' },
-      ...(categoryId ? [{ $match: { 'items.categoryId': new mongoose.Types.ObjectId(categoryId) } }] : []),
+      ...(categoryId && categoryId !== 'all' ? [{ $match: { 'items.categoryId': new mongoose.Types.ObjectId(categoryId) } }] : []),
       {
         $group: {
           _id: '$items.productId',

@@ -62,6 +62,7 @@ export const useCartStore = create((set, get) => ({
 
       const newItem = {
         productId: product._id,
+        categoryId: product.categoryId?._id || product.categoryId || undefined,
         productNameSnapshot: product.name,
         skuSnapshot: product.sku,
         categoryNameSnapshot: product.categoryNameSnapshot || product.categoryId?.name || '',

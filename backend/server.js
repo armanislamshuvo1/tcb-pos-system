@@ -68,10 +68,27 @@ app.get('/api/updates-stream', (req, res) => {
   res.setHeader('Connection', 'keep-alive');
   res.flushHeaders?.();
 
-  addClient(res);
+  let clientMetadata = {};
+  const token = req.query.token || (req.headers.authorization?.startsWith('Bearer ') ? req.headers.authorization.split('Bearer ')[1].trim() : null);
+  if (token) {
+    try {
+      const jwt = require('jsonwebtoken');
+      const decoded = jwt.verify(token, process.env.JWT_SECRET || 'tcb_pos_secure_jwt_secret_key_shift_token_2026_983742');
+      if (decoded) {
+        clientMetadata.companyId = decoded.companyId || null;
+        clientMetadata.role = decoded.role || 'guest';
+      }
+    } catch (e) {
+      // invalid token, defaults to guest
+    }
+  } else if (req.query.companyId) {
+    clientMetadata.companyId = req.query.companyId;
+  }
+
+  addClient(res, clientMetadata);
 
   // Initial heartbeat
-  res.write(`event: connected\ndata: ${JSON.stringify({ message: 'SSE Stream Connected' })}\n\n`);
+  res.write(`event: connected\ndata: ${JSON.stringify({ message: 'SSE Stream Connected', companyId: clientMetadata.companyId || 'all' })}\n\n`);
 });
 
 // API Routes

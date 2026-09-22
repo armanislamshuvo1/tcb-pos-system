@@ -21,11 +21,13 @@ import {
   BedDouble, 
   AlertTriangle,
   Users,
-  ChevronRight
+  ChevronRight,
+  Printer
 } from 'lucide-react';
 import CustomerSearchSelect from './CustomerSearchSelect';
 import StaffSearchSelect from './StaffSearchSelect';
 import RoomSearchSelect from './RoomSearchSelect';
+import PrintableReceipt from './PrintableReceipt';
 import { isDormRoom } from '../../utils/rooms';
 
 function QuantityControl({ quantity, onUpdateDelta, onSetQuantity }) {
@@ -147,7 +149,7 @@ export default function ActiveTicket({
     setNotes
   } = useCartStore();
 
-  const { currency } = useAuth();
+  const { currency, company } = useAuth();
 
   // Tab Assignment Mode: 'CUSTOMER' | 'ROOM' | 'STAFF'
   const [tabType, setTabType] = useState('CUSTOMER');
@@ -167,6 +169,7 @@ export default function ActiveTicket({
   const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
   const [checkoutNotes, setCheckoutNotes] = useState('');
   const [successReceipt, setSuccessReceipt] = useState(null);
+  const [showPrintReceipt, setShowPrintReceipt] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
 
   // Action / Validation Alert Modal State
@@ -1161,15 +1164,39 @@ export default function ActiveTicket({
               </div>
             </div>
 
-            <button
-              type="button"
-              onClick={() => setSuccessReceipt(null)}
-              className="w-full py-3 bg-amber-500 hover:bg-amber-400 text-black font-bold text-sm rounded-xl transition cursor-pointer shadow-lg shadow-amber-500/20"
-            >
-              New Ticket (Ready)
-            </button>
+            <div className="grid grid-cols-2 gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => setShowPrintReceipt(true)}
+                className="py-3 px-3 bg-slate-800 hover:bg-slate-750 border border-slate-700 text-amber-400 hover:text-amber-300 font-bold text-xs rounded-xl flex items-center justify-center space-x-1.5 transition cursor-pointer shadow-sm"
+              >
+                <Printer className="w-4 h-4" />
+                <span>Print Receipt</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setSuccessReceipt(null);
+                  setShowPrintReceipt(false);
+                }}
+                className="py-3 px-3 bg-amber-500 hover:bg-amber-400 text-black font-bold text-xs rounded-xl transition cursor-pointer shadow-lg shadow-amber-500/20"
+              >
+                New Ticket
+              </button>
+            </div>
           </div>
         </div>
+      )}
+
+      {/* 80mm Thermal Printable Receipt Modal */}
+      {showPrintReceipt && successReceipt && (
+        <PrintableReceipt
+          transaction={successReceipt}
+          company={company}
+          currency={currency}
+          onClose={() => setShowPrintReceipt(false)}
+        />
       )}
     </div>
   );

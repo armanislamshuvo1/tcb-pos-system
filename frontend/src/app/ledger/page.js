@@ -1,9 +1,9 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState } from 'react';
 import Header from '../../components/Header';
 import TransactionDetailModal from '../../components/TransactionDetailModal';
-import { useAxiosSecure } from '../../hooks/useApi';
+import { useLedgerQuery } from '../../hooks/queries/useLedgerQueries';
 import { useAuth } from '../../context/AuthContext';
 import { formatCurrency } from '../../utils/currency';
 import { 
@@ -21,19 +21,9 @@ import {
 } from 'lucide-react';
 
 export default function LedgerPage() {
-  const axiosSecure = useAxiosSecure();
-  const { currency, lockTerminal } = useAuth();
+  const { currency } = useAuth();
 
-  const [transactions, setTransactions] = useState([]);
   const [selectedTxn, setSelectedTxn] = useState(null);
-  const [summary, setSummary] = useState({
-    totalRevenueInCents: 0,
-    totalUnpaidInCents: 0,
-    totalDiscountInCents: 0
-  });
-  const [pagination, setPagination] = useState({ currentPage: 1, totalPages: 1, totalCount: 0 });
-  const [loading, setLoading] = useState(true);
-  const [errorMsg, setErrorMsg] = useState('');
 
   // Filters
   const [statusFilter, setStatusFilter] = useState('ALL'); // 'ALL', 'PAID', 'UNPAID_TAB'
@@ -42,37 +32,19 @@ export default function LedgerPage() {
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
 
-  const fetchLedger = useCallback(async () => {
-    try {
-      setErrorMsg('');
-      const params = {
-        status: statusFilter,
-        page,
-        limit: 25
-      };
+  const { data: ledgerData, isLoading: loading, error, refetch } = useLedgerQuery({
+    statusFilter,
+    startDate,
+    endDate,
+    search,
+    page,
+    limit: 25,
+  });
 
-      if (startDate) params.startDate = startDate;
-      if (endDate) params.endDate = endDate;
-      if (search.trim()) params.search = search.trim();
-
-      const res = await axiosSecure.get('/api/transactions/ledger', { params });
-      if (res.data?.success) {
-        setTransactions(res.data.data.transactions);
-        setPagination(res.data.data.pagination);
-        setSummary(res.data.data.summary);
-      }
-    } catch (err) {
-      console.error('Error fetching ledger:', err);
-      setErrorMsg(err.response?.data?.message || 'Failed to fetch ledger transactions');
-    } finally {
-      setLoading(false);
-    }
-  }, [axiosSecure, statusFilter, startDate, endDate, search, page]);
-
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    fetchLedger();
-  }, [fetchLedger]);
+  const transactions = ledgerData?.transactions || [];
+  const pagination = ledgerData?.pagination || { currentPage: 1, totalPages: 1, totalCount: 0 };
+  const summary = ledgerData?.summary || { totalRevenueInCents: 0, totalUnpaidInCents: 0, totalDiscountInCents: 0 };
+  const errorMsg = error?.response?.data?.message || (error ? 'Failed to fetch ledger transactions' : '');
 
   const handleResetFilters = () => {
     setStatusFilter('ALL');
@@ -391,7 +363,7 @@ export default function LedgerPage() {
             onClose={() => setSelectedTxn(null)}
             onTxnUpdated={(updated) => {
               setSelectedTxn(updated);
-              fetchLedger();
+              refetch();
             }}
           />
         )}

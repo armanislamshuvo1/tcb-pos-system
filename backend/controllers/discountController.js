@@ -6,7 +6,10 @@ const Discount = require('../models/Discount');
 exports.getPresetDiscounts = async (req, res, next) => {
   try {
     const query = { isActive: true, isPresetButton: true };
-    if (req.user && req.user.role !== 'system_admin' && req.user.companyId) {
+    if (req.user && req.user.role !== 'system_admin') {
+      if (!req.user.companyId) {
+        return res.status(200).json({ success: true, data: [] });
+      }
       query.companyId = req.user.companyId;
     }
 
@@ -29,7 +32,10 @@ exports.getPresetDiscounts = async (req, res, next) => {
 exports.getAllDiscounts = async (req, res, next) => {
   try {
     const query = {};
-    if (req.user && req.user.role !== 'system_admin' && req.user.companyId) {
+    if (req.user && req.user.role !== 'system_admin') {
+      if (!req.user.companyId) {
+        return res.status(200).json({ success: true, data: [] });
+      }
       query.companyId = req.user.companyId;
     }
 
@@ -60,6 +66,12 @@ exports.createDiscount = async (req, res, next) => {
       });
     }
 
+    if (req.user.role !== 'system_admin' && !req.user.companyId) {
+      return res.status(403).json({ success: false, message: 'Unauthorized: No company associated' });
+    }
+
+    const assignedCompanyId = req.user.role === 'system_admin' ? (companyId || null) : req.user.companyId;
+
     let productNameSnapshot = undefined;
     let validProductId = undefined;
 
@@ -67,12 +79,16 @@ exports.createDiscount = async (req, res, next) => {
       const Product = require('../models/Product');
       const prod = await Product.findById(productId);
       if (prod) {
+        if (assignedCompanyId && prod.companyId && prod.companyId.toString() !== assignedCompanyId.toString()) {
+          return res.status(400).json({
+            success: false,
+            message: 'The specified Product does not belong to your company'
+          });
+        }
         validProductId = prod._id;
         productNameSnapshot = prod.name;
       }
     }
-
-    const assignedCompanyId = req.user.role === 'system_admin' ? (companyId || null) : req.user.companyId;
 
     const discount = await Discount.create({
       name: name.trim(),
@@ -110,7 +126,7 @@ exports.updateDiscount = async (req, res, next) => {
     }
 
     if (req.user.role !== 'system_admin') {
-      if (discount.companyId && req.user.companyId && discount.companyId.toString() !== req.user.companyId.toString()) {
+      if (!discount.companyId || !req.user.companyId || discount.companyId.toString() !== req.user.companyId.toString()) {
         return res.status(403).json({ success: false, message: 'Unauthorized to edit this company discount' });
       }
     }
@@ -146,7 +162,7 @@ exports.deleteDiscount = async (req, res, next) => {
     }
 
     if (req.user.role !== 'system_admin') {
-      if (discount.companyId && req.user.companyId && discount.companyId.toString() !== req.user.companyId.toString()) {
+      if (!discount.companyId || !req.user.companyId || discount.companyId.toString() !== req.user.companyId.toString()) {
         return res.status(403).json({ success: false, message: 'Unauthorized to delete this company discount' });
       }
     }

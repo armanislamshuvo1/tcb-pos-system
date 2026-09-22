@@ -3,6 +3,8 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Header from '../../components/Header';
+import { useQueryClient } from '@tanstack/react-query';
+import { queryKeys } from '../../lib/queryKeys';
 import { useAxiosSecure } from '../../hooks/useApi';
 import { useAuth } from '../../context/AuthContext';
 import { formatCurrency, SUPPORTED_CURRENCIES } from '../../utils/currency';
@@ -30,6 +32,7 @@ import {
 export default function AdminCatalogPage() {
   const router = useRouter();
   const axiosSecure = useAxiosSecure();
+  const queryClient = useQueryClient();
   const { user, role, currency, company, updateActiveCompany } = useAuth();
 
   // Route Guard: Non-admins cannot access the admin dashboard
@@ -203,6 +206,7 @@ export default function AdminCatalogPage() {
       console.error('Error fetching admin data:', err);
     } finally {
       setLoading(false);
+      queryClient.invalidateQueries({ queryKey: queryKeys.catalog.all });
     }
   };
 

@@ -42,9 +42,6 @@ exports.getCurrentUser = async (req, res, next) => {
     if (user.companyId) {
       company = await Company.findById(user.companyId).lean();
     }
-    if (!company) {
-      company = await Company.findOne({ isActive: true }).lean();
-    }
 
     res.status(200).json({
       success: true,
@@ -438,9 +435,6 @@ exports.pinLogin = async (req, res, next) => {
     }
     if (!company && targetCompanyId) {
       company = await Company.findById(targetCompanyId).lean();
-    }
-    if (!company) {
-      company = await Company.findOne({ isActive: true }).lean();
     }
 
     // Cryptographically signed JWT token with 12-hour shift expiry

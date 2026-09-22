@@ -30,6 +30,7 @@ exports.calculateCartFinancials = ({ items = [], globalDiscount = null }) => {
 
     return {
       productId: item.productId,
+      categoryId: item.categoryId || undefined,
       productNameSnapshot: item.productNameSnapshot || item.productName || 'Unknown Product',
       skuSnapshot: item.skuSnapshot || item.sku || 'SKU-NONE',
       categoryNameSnapshot: item.categoryNameSnapshot || item.categoryName || '',

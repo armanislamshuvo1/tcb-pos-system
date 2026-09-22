@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { useAxiosSecure } from '../hooks/useApi';
+import { useRevertSettlementMutation } from '../hooks/queries/useTabsQueries';
 import { formatCurrency } from '../utils/currency';
 import {
   RotateCcw,
@@ -26,7 +26,7 @@ const PRESET_REASONS = [
 
 export default function RevertSettlementModal({ isOpen, txn, onClose, onRevertSuccess }) {
   const { user, currency } = useAuth();
-  const axiosSecure = useAxiosSecure();
+  const revertMutation = useRevertSettlementMutation();
 
   const [reason, setReason] = useState('');
   const [pinCode, setPinCode] = useState('');
@@ -51,16 +51,16 @@ export default function RevertSettlementModal({ isOpen, txn, onClose, onRevertSu
 
       const targetIds = txn?.transactionIds || (txn?._id ? [txn._id] : []);
 
-      const res = await axiosSecure.post('/api/tabs/revert-settlement', {
+      const res = await revertMutation.mutateAsync({
         transactionIds: targetIds,
         pinCode: pinCode.trim(),
         reason: reason.trim()
       });
 
-      if (res.data?.success) {
-        setSuccessMsg(res.data.message || 'Settlement reverted successfully');
+      if (res?.success) {
+        setSuccessMsg(res.message || 'Settlement reverted successfully');
         setTimeout(() => {
-          onRevertSuccess?.(res.data.data);
+          onRevertSuccess?.(res.data);
           onClose();
         }, 600);
       }
@@ -70,7 +70,7 @@ export default function RevertSettlementModal({ isOpen, txn, onClose, onRevertSu
     } finally {
       setSubmitting(false);
     }
-  }, [reason, pinCode, txn, axiosSecure, onRevertSuccess, onClose]);
+  }, [reason, pinCode, txn, revertMutation, onRevertSuccess, onClose]);
 
   // Keyboard listener for digits and escape
   useEffect(() => {

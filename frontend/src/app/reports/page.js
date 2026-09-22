@@ -1,8 +1,8 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import Header from '../../components/Header';
-import { useAxiosSecure } from '../../hooks/useApi';
+import { useReportsQuery } from '../../hooks/queries/useReportsQueries';
 import { useAuth } from '../../context/AuthContext';
 import { formatCurrency } from '../../utils/currency';
 import { 
@@ -17,52 +17,23 @@ import {
 } from 'lucide-react';
 
 export default function ReportsPage() {
-  const axiosSecure = useAxiosSecure();
   const { currency } = useAuth();
-
-  const [salesSummary, setSalesSummary] = useState(null);
-  const [paymentBreakdown, setPaymentBreakdown] = useState([]);
-  const [staffReports, setStaffReports] = useState([]);
-  const [productReports, setProductReports] = useState([]);
-  const [loading, setLoading] = useState(true);
 
   // Timeframe filter
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
+  const [appliedFilters, setAppliedFilters] = useState({ startDate: '', endDate: '' });
 
-  const fetchReports = async () => {
-    try {
-      setLoading(true);
-      const params = {};
-      if (startDate) params.startDate = startDate;
-      if (endDate) params.endDate = endDate;
+  const { data: reportData, isLoading: loading } = useReportsQuery(appliedFilters);
 
-      const [salesRes, staffRes, prodRes] = await Promise.all([
-        axiosSecure.get('/api/reports/sales-summary', { params }),
-        axiosSecure.get('/api/reports/staff-consumption', { params }),
-        axiosSecure.get('/api/reports/products', { params })
-      ]);
-
-      if (salesRes.data?.success) {
-        setSalesSummary(salesRes.data.data.summary);
-        setPaymentBreakdown(salesRes.data.data.paymentBreakdown);
-      }
-      if (staffRes.data?.success) setStaffReports(staffRes.data.data);
-      if (prodRes.data?.success) setProductReports(prodRes.data.data);
-    } catch (err) {
-      console.error('Error fetching reports:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchReports();
-  }, [axiosSecure]);
+  const salesSummary = reportData?.salesSummary || null;
+  const paymentBreakdown = reportData?.paymentBreakdown || [];
+  const staffReports = reportData?.staffReports || [];
+  const productReports = reportData?.productReports || [];
 
   const handleApplyFilter = (e) => {
     e.preventDefault();
-    fetchReports();
+    setAppliedFilters({ startDate, endDate });
   };
 
   return (

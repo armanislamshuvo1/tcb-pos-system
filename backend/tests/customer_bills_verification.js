@@ -1,4 +1,4 @@
-﻿// Customer Bills Verification Suite
+// Customer Bills Verification Suite
 require('dotenv').config({ path: __dirname + '/../.env' });
 const connectDB = require('../config/db');
 const mongoose = require('mongoose');
@@ -29,6 +29,8 @@ const runVerification = async () => {
   const product = await Product.findOne();
   const dummyProdId = product ? product._id : new mongoose.Types.ObjectId();
   const dummySku = product ? product.sku : 'CUST-SKU-1';
+  const dummyPrice = product ? product.priceInCents : 1200;
+  const expectedTotal = dummyPrice * 3;
 
   // 1. Create a new Customer via customerController
   console.log('1. Testing createCustomer...');
@@ -101,7 +103,7 @@ const runVerification = async () => {
         productNameSnapshot: 'Fresh Orange Juice',
         skuSnapshot: dummySku,
         categoryNameSnapshot: 'Drinks',
-        unitPriceInCents: 1200,
+        unitPriceInCents: dummyPrice,
         quantity: 3
       }],
       notes: 'Customer hold bill'
@@ -147,7 +149,7 @@ const runVerification = async () => {
   };
   await getConsolidatedCustomerTabs(mockReqGetTabs, mockResGetTabs, (err) => { throw err; });
 
-  if (customerTabs.length === 0 || customerTabs[0].totalOwedInCents !== 3600) {
+  if (customerTabs.length === 0 || customerTabs[0].totalOwedInCents !== expectedTotal) {
     console.error('FAIL: getConsolidatedCustomerTabs did not properly aggregate customer bill');
     await mongoose.disconnect();
     process.exit(1);

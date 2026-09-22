@@ -4,10 +4,10 @@ const rateLimit = require('express-rate-limit');
 const userController = require('../controllers/userController');
 const { authenticateToken, requireRole } = require('../middleware/authMiddleware');
 
-// Brute-force protection: Max 30 PIN login attempts per minute per IP
+// Brute-force protection: Max 10 PIN login attempts per minute per IP
 const pinLoginLimiter = rateLimit({
   windowMs: 60 * 1000, // 1 minute
-  max: 30,
+  max: 10,
   standardHeaders: true,
   legacyHeaders: false,
   message: {

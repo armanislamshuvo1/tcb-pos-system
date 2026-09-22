@@ -2,6 +2,17 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import Header from '../../components/Header';
+import { useQueryClient } from '@tanstack/react-query';
+import { queryKeys } from '../../lib/queryKeys';
+import { 
+  useAllBillsQuery, 
+  useCustomerTabsQuery, 
+  useRoomTabsQuery, 
+  useConsolidatedTabsQuery, 
+  useProductTabsQuery, 
+  useSettledBillsQuery, 
+  useSettleTransactionsMutation 
+} from '../../hooks/queries/useTabsQueries';
 import { useAxiosSecure } from '../../hooks/useApi';
 import { useAuth } from '../../context/AuthContext';
 import { formatCurrency } from '../../utils/currency';
@@ -29,22 +40,19 @@ import RevertSettlementModal from '../../components/RevertSettlementModal';
 
 export default function StaffTabsPage() {
   const axiosSecure = useAxiosSecure();
+  const queryClient = useQueryClient();
+  const settleMutation = useSettleTransactionsMutation();
   const { currency } = useAuth();
   
   // View state: 'all' | 'by_customer' | 'by_room' | 'by_staff' | 'by_product' | 'recently_settled'
   const [viewMode, setViewMode] = useState('all');
 
-  // All Unpaid / Hold Bills State (Customer bills + Room bills + Staff tabs)
-  const [allBills, setAllBills] = useState([]);
-  const [allLoading, setAllLoading] = useState(false);
+  // Search & Filter State
   const [allSearchTerm, setAllSearchTerm] = useState('');
   const [allBillTypeFilter, setAllBillTypeFilter] = useState('ALL');
   const [allSortBy, setAllSortBy] = useState('newest');
   const [expandedAllBillIds, setExpandedAllBillIds] = useState({});
 
-  // Customer Tabs State (Customer bills)
-  const [customerTabs, setCustomerTabs] = useState([]);
-  const [customerLoading, setCustomerLoading] = useState(false);
   const [customerSearchTerm, setCustomerSearchTerm] = useState('');
   const [expandedCustomerKeys, setExpandedCustomerKeys] = useState({});
   const [expandedCustomerItemKeys, setExpandedCustomerItemKeys] = useState({});
@@ -57,23 +65,17 @@ export default function StaffTabsPage() {
   const [customerSettleLoading, setCustomerSettleLoading] = useState(false);
 
   // Staff Tabs State
-  const [tabs, setTabs] = useState([]);
-  const [loading, setLoading] = useState(true);
   const [expandedStaffId, setExpandedStaffId] = useState(null);
   const [expandedItemKeys, setExpandedItemKeys] = useState({});
 
-  // Room Tabs State (Customer room bills)
-  const [roomTabs, setRoomTabs] = useState([]);
-  const [roomLoading, setRoomLoading] = useState(false);
+  // Room Tabs State
   const [roomSearchTerm, setRoomSearchTerm] = useState('');
   const [selectedWing, setSelectedWing] = useState('ALL');
   const [expandedRoomKeys, setExpandedRoomKeys] = useState({});
   const [expandedRoomItemKeys, setExpandedRoomItemKeys] = useState({});
 
-  // Product Tabs State (Search unpaid items by product name)
-  const [productTabs, setProductTabs] = useState([]);
+  // Product Tabs State
   const [productSearchTerm, setProductSearchTerm] = useState('');
-  const [productLoading, setProductLoading] = useState(false);
   const [expandedProductNames, setExpandedProductNames] = useState({});
   const [expandedProductAuditKeys, setExpandedProductAuditKeys] = useState({});
 
@@ -92,8 +94,6 @@ export default function StaffTabsPage() {
   const [roomSettleLoading, setRoomSettleLoading] = useState(false);
 
   // Recently Settled Bills State
-  const [settledBills, setSettledBills] = useState([]);
-  const [settledLoading, setSettledLoading] = useState(false);
   const [settledSearchTerm, setSettledSearchTerm] = useState('');
   const [expandedSettledBillIds, setExpandedSettledBillIds] = useState({});
   const [revertModalTxn, setRevertModalTxn] = useState(null);
@@ -101,171 +101,45 @@ export default function StaffTabsPage() {
 
   const [feedback, setFeedback] = useState(null);
 
-  const fetchSettledBills = async (search = '') => {
-    try {
-      setSettledLoading(true);
-      const params = { limit: 50 };
-      if (search && search.trim()) {
-        params.search = search.trim();
-      }
-      const res = await axiosSecure.get('/api/tabs/settled', { params });
-      if (res.data?.success) {
-        setSettledBills(res.data.data);
-      }
-    } catch (err) {
-      console.error('Failed to load recently settled bills:', err);
-    } finally {
-      setSettledLoading(false);
-    }
-  };
-
-  const fetchAllBills = async (search = '', billType = 'ALL') => {
-    try {
-      setAllLoading(true);
-      const params = {};
-      if (search && search.trim()) {
-        params.search = search.trim();
-      }
-      if (billType && billType !== 'ALL') {
-        params.billType = billType;
-      }
-      const res = await axiosSecure.get('/api/tabs/all', { params });
-      if (res.data?.success) {
-        setAllBills(res.data.data);
-      }
-    } catch (err) {
-      console.error('Failed to load all bills:', err);
-    } finally {
-      setAllLoading(false);
-    }
-  };
-
-  const fetchConsolidatedTabs = async () => {
-    try {
-      setLoading(true);
-      const res = await axiosSecure.get('/api/tabs/consolidated');
-      if (res.data?.success) {
-        setTabs(res.data.data);
-      }
-    } catch (err) {
-      console.error('Failed to load tabs:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const fetchRoomTabs = async (search = '') => {
-    try {
-      setRoomLoading(true);
-      const params = {};
-      if (search && search.trim()) {
-        params.search = search.trim();
-      }
-      const res = await axiosSecure.get('/api/tabs/rooms', { params });
-      if (res.data?.success) {
-        setRoomTabs(res.data.data);
-      }
-    } catch (err) {
-      console.error('Failed to load room tabs:', err);
-    } finally {
-      setRoomLoading(false);
-    }
-  };
-
-  const fetchTabsByProduct = async (search = '') => {
-    try {
-      setProductLoading(true);
-      const params = {};
-      if (search && search.trim()) {
-        params.search = search.trim();
-      }
-      const res = await axiosSecure.get('/api/tabs/by-product', { params });
-      if (res.data?.success) {
-        setProductTabs(res.data.data);
-      }
-    } catch (err) {
-      console.error('Failed to load product tabs:', err);
-    } finally {
-      setProductLoading(false);
-    }
-  };
-
-  const fetchCustomerTabs = async (search = '') => {
-    try {
-      setCustomerLoading(true);
-      const params = {};
-      if (search && search.trim()) {
-        params.search = search.trim();
-      }
-      const res = await axiosSecure.get('/api/tabs/customers', { params });
-      if (res.data?.success) {
-        setCustomerTabs(res.data.data);
-      }
-    } catch (err) {
-      console.error('Failed to load customer tabs:', err);
-    } finally {
-      setCustomerLoading(false);
-    }
-  };
+  // Debounced search terms for smooth reactive queries
+  const [debouncedAllSearch, setDebouncedAllSearch] = useState('');
+  const [debouncedCustomerSearch, setDebouncedCustomerSearch] = useState('');
+  const [debouncedRoomSearch, setDebouncedRoomSearch] = useState('');
+  const [debouncedProductSearch, setDebouncedProductSearch] = useState('');
+  const [debouncedSettledSearch, setDebouncedSettledSearch] = useState('');
 
   useEffect(() => {
-    fetchAllBills();
-    fetchCustomerTabs();
-    fetchConsolidatedTabs();
-    fetchRoomTabs();
-    fetchTabsByProduct();
-    fetchSettledBills();
-  }, [axiosSecure]);
+    const timer = setTimeout(() => setDebouncedAllSearch(allSearchTerm), 250);
+    return () => clearTimeout(timer);
+  }, [allSearchTerm]);
 
-  // Real-time debounced query for all bills view
   useEffect(() => {
-    if (viewMode === 'all') {
-      const timer = setTimeout(() => {
-        fetchAllBills(allSearchTerm, allBillTypeFilter);
-      }, 250);
-      return () => clearTimeout(timer);
-    }
-  }, [allSearchTerm, allBillTypeFilter, viewMode, axiosSecure]);
+    const timer = setTimeout(() => setDebouncedCustomerSearch(customerSearchTerm), 250);
+    return () => clearTimeout(timer);
+  }, [customerSearchTerm]);
 
-  // Real-time debounced query for customer search view
   useEffect(() => {
-    if (viewMode === 'by_customer') {
-      const timer = setTimeout(() => {
-        fetchCustomerTabs(customerSearchTerm);
-      }, 250);
-      return () => clearTimeout(timer);
-    }
-  }, [customerSearchTerm, viewMode, axiosSecure]);
+    const timer = setTimeout(() => setDebouncedRoomSearch(roomSearchTerm), 250);
+    return () => clearTimeout(timer);
+  }, [roomSearchTerm]);
 
-  // Real-time debounced query for room search view
   useEffect(() => {
-    if (viewMode === 'by_room') {
-      const timer = setTimeout(() => {
-        fetchRoomTabs(roomSearchTerm);
-      }, 250);
-      return () => clearTimeout(timer);
-    }
-  }, [roomSearchTerm, viewMode, axiosSecure]);
+    const timer = setTimeout(() => setDebouncedProductSearch(productSearchTerm), 250);
+    return () => clearTimeout(timer);
+  }, [productSearchTerm]);
 
-  // Real-time debounced query for product search view
   useEffect(() => {
-    if (viewMode === 'by_product') {
-      const timer = setTimeout(() => {
-        fetchTabsByProduct(productSearchTerm);
-      }, 250);
-      return () => clearTimeout(timer);
-    }
-  }, [productSearchTerm, viewMode, axiosSecure]);
+    const timer = setTimeout(() => setDebouncedSettledSearch(settledSearchTerm), 250);
+    return () => clearTimeout(timer);
+  }, [settledSearchTerm]);
 
-  // Real-time debounced query for recently settled view
-  useEffect(() => {
-    if (viewMode === 'recently_settled') {
-      const timer = setTimeout(() => {
-        fetchSettledBills(settledSearchTerm);
-      }, 250);
-      return () => clearTimeout(timer);
-    }
-  }, [settledSearchTerm, viewMode, axiosSecure]);
+  // Reactive TanStack Queries
+  const { data: allBills = [], isLoading: allLoading } = useAllBillsQuery(debouncedAllSearch, allBillTypeFilter);
+  const { data: customerTabs = [], isLoading: customerLoading } = useCustomerTabsQuery(debouncedCustomerSearch);
+  const { data: tabs = [], isLoading: loading } = useConsolidatedTabsQuery();
+  const { data: roomTabs = [], isLoading: roomLoading } = useRoomTabsQuery(debouncedRoomSearch);
+  const { data: productTabs = [], isLoading: productLoading } = useProductTabsQuery(debouncedProductSearch);
+  const { data: settledBills = [], isLoading: settledLoading } = useSettledBillsQuery(debouncedSettledSearch);
 
   const toggleAllBillAccordion = (billId) => {
     setExpandedAllBillIds((prev) => ({
@@ -354,14 +228,7 @@ export default function StaffTabsPage() {
   };
 
   const refreshAllTabsData = async () => {
-    await Promise.all([
-      fetchAllBills(allSearchTerm, allBillTypeFilter),
-      fetchCustomerTabs(customerSearchTerm),
-      fetchRoomTabs(roomSearchTerm),
-      fetchConsolidatedTabs(),
-      fetchTabsByProduct(productSearchTerm),
-      fetchSettledBills(settledSearchTerm)
-    ]);
+    await queryClient.invalidateQueries({ queryKey: queryKeys.tabs.all });
   };
 
   const handleOpenSettleForBill = (bill) => {
@@ -696,12 +563,7 @@ export default function StaffTabsPage() {
           <div className="flex items-center space-x-2 overflow-x-auto pb-1 sm:pb-0 scrollbar-none">
             <button
               type="button"
-              onClick={() => {
-                setViewMode('all');
-                if (allBills.length === 0) {
-                  fetchAllBills(allSearchTerm, allBillTypeFilter);
-                }
-              }}
+              onClick={() => setViewMode('all')}
               className={`flex items-center space-x-2 px-4 py-2.5 rounded-xl font-bold text-sm transition shrink-0 ${
                 viewMode === 'all'
                   ? 'bg-amber-500 text-black shadow-lg shadow-amber-500/20'
@@ -714,12 +576,7 @@ export default function StaffTabsPage() {
 
             <button
               type="button"
-              onClick={() => {
-                setViewMode('by_customer');
-                if (customerTabs.length === 0) {
-                  fetchCustomerTabs(customerSearchTerm);
-                }
-              }}
+              onClick={() => setViewMode('by_customer')}
               className={`flex items-center space-x-2 px-4 py-2.5 rounded-xl font-bold text-sm transition shrink-0 ${
                 viewMode === 'by_customer'
                   ? 'bg-amber-500 text-black shadow-lg shadow-amber-500/20'
@@ -732,12 +589,7 @@ export default function StaffTabsPage() {
 
             <button
               type="button"
-              onClick={() => {
-                setViewMode('by_room');
-                if (roomTabs.length === 0) {
-                  fetchRoomTabs(roomSearchTerm);
-                }
-              }}
+              onClick={() => setViewMode('by_room')}
               className={`flex items-center space-x-2 px-4 py-2.5 rounded-xl font-bold text-sm transition shrink-0 ${
                 viewMode === 'by_room'
                   ? 'bg-amber-500 text-black shadow-lg shadow-amber-500/20'
@@ -763,12 +615,7 @@ export default function StaffTabsPage() {
 
             <button
               type="button"
-              onClick={() => {
-                setViewMode('by_product');
-                if (productTabs.length === 0) {
-                  fetchTabsByProduct(productSearchTerm);
-                }
-              }}
+              onClick={() => setViewMode('by_product')}
               className={`flex items-center space-x-2 px-4 py-2.5 rounded-xl font-bold text-sm transition shrink-0 ${
                 viewMode === 'by_product'
                   ? 'bg-amber-500 text-black shadow-lg shadow-amber-500/20'
@@ -781,10 +628,7 @@ export default function StaffTabsPage() {
 
             <button
               type="button"
-              onClick={() => {
-                setViewMode('recently_settled');
-                fetchSettledBills(settledSearchTerm);
-              }}
+              onClick={() => setViewMode('recently_settled')}
               className={`flex items-center space-x-2 px-4 py-2.5 rounded-xl font-bold text-sm transition shrink-0 ${
                 viewMode === 'recently_settled'
                   ? 'bg-amber-500 text-black shadow-lg shadow-amber-500/20'

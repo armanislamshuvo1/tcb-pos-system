@@ -1,4 +1,5 @@
 const Transaction = require('../models/Transaction');
+const Product = require('../models/Product');
 const User = require('../models/User');
 const Customer = require('../models/Customer');
 const { getNextTransactionId } = require('../utils/sequenceService');
@@ -44,12 +45,16 @@ exports.createTransaction = async (req, res, next) => {
       return res.status(400).json({ success: false, message: 'Cart must contain at least one item' });
     }
 
-    // Resolve Customer if attached
+    // Resolve Customer if attached (scoped to current company)
     let resolvedCustomerId = null;
     let resolvedCustomerName = null;
 
     if (customerId) {
-      const cust = await Customer.findById(customerId);
+      const custFilter = { _id: customerId };
+      if (req.user && req.user.role !== 'system_admin' && req.user.companyId) {
+        custFilter.companyId = req.user.companyId;
+      }
+      const cust = await Customer.findOne(custFilter);
       if (cust) {
         resolvedCustomerId = cust._id;
         resolvedCustomerName = cust.name;
@@ -59,12 +64,16 @@ exports.createTransaction = async (req, res, next) => {
       resolvedCustomerName = customerName.trim();
     }
 
-    // Resolve Staff Member if attached
+    // Resolve Staff Member if attached (scoped to current company)
     let staffNameSnapshot = null;
     let resolvedStaffMemberId = null;
 
     if (staffMemberId) {
-      const staff = await User.findById(staffMemberId);
+      const staffFilter = { _id: staffMemberId };
+      if (req.user && req.user.role !== 'system_admin' && req.user.companyId) {
+        staffFilter.companyId = req.user.companyId;
+      }
+      const staff = await User.findOne(staffFilter);
       if (staff) {
         resolvedStaffMemberId = staff._id;
         staffNameSnapshot = staff.fullName;
@@ -130,9 +139,35 @@ exports.createTransaction = async (req, res, next) => {
       }
     }
 
+    // Verify Products exist and belong to current company (or system catalog)
+    const productIds = items.map((i) => i.productId).filter(Boolean);
+    const prodFilter = { _id: { $in: productIds } };
+    if (req.user && req.user.role !== 'system_admin' && req.user.companyId) {
+      prodFilter.companyId = req.user.companyId;
+    }
+    const dbProducts = await Product.find(prodFilter).lean();
+    const productMap = new Map();
+    for (const p of dbProducts) {
+      productMap.set(p._id.toString(), p);
+    }
+
+    // Enrich items with verified catalog data and categoryId
+    const validatedItems = items.map((item) => {
+      const dbProd = productMap.get(item.productId?.toString());
+      return {
+        ...item,
+        productId: dbProd ? dbProd._id : item.productId,
+        categoryId: dbProd?.categoryId ? (dbProd.categoryId._id || dbProd.categoryId) : (item.categoryId || undefined),
+        productNameSnapshot: dbProd ? dbProd.name : (item.productNameSnapshot || item.name || 'Product'),
+        skuSnapshot: dbProd ? dbProd.sku : (item.skuSnapshot || item.sku || 'SKU-NONE'),
+        categoryNameSnapshot: dbProd ? (dbProd.categoryNameSnapshot || '') : (item.categoryNameSnapshot || ''),
+        unitPriceInCents: dbProd ? dbProd.priceInCents : (Number(item.unitPriceInCents) || 0)
+      };
+    });
+
     // Calculate deterministic integer financials
     const financials = calculateCartFinancials({
-      items,
+      items: validatedItems,
       globalDiscount
     });
 
@@ -159,6 +194,7 @@ exports.createTransaction = async (req, res, next) => {
       globalDiscountType: globalDiscount?.type || 'none',
       globalDiscountValue: Number(globalDiscount?.value) || 0,
       globalDiscountInCents: financials.globalDiscountInCents,
+      totalDiscountInCents: financials.totalDiscountInCents,
       grandTotalInCents: financials.grandTotalInCents,
       paymentMethod: status === 'UNPAID_TAB' ? 'TAB_DEFERRED' : paymentMethod,
       settledAt: status === 'PAID' ? new Date() : undefined,
@@ -179,7 +215,7 @@ exports.createTransaction = async (req, res, next) => {
       setTimeout(() => idempotencyCache.delete(idempotencyKey), 120000);
     }
 
-    // Real-time broadcast for other POS terminals and tab screens
+    // Real-time broadcast scoped to current company terminals
     broadcastUpdate('transaction_created', {
       id: transaction._id,
       txnNumber: transaction.txnNumber,
@@ -189,7 +225,7 @@ exports.createTransaction = async (req, res, next) => {
       customerId: transaction.customerId,
       customerName: transaction.customerName,
       createdAt: transaction.createdAt
-    });
+    }, transaction.companyId);
 
     res.status(201).json(responsePayload);
   } catch (error) {
@@ -443,7 +479,7 @@ exports.voidTransaction = async (req, res, next) => {
 
     await transaction.save();
 
-    // Broadcast SSE event for other terminals, tabs, and ledger pages
+    // Broadcast SSE event scoped to company terminals
     broadcastUpdate('transaction_voided', {
       id: transaction._id,
       txnNumber: transaction.txnNumber,
@@ -452,7 +488,7 @@ exports.voidTransaction = async (req, res, next) => {
       voidedByStaffName: transaction.voidedByStaffName,
       voidReason: transaction.voidReason,
       voidedAt: transaction.voidedAt
-    });
+    }, transaction.companyId);
 
     res.status(200).json({
       success: true,

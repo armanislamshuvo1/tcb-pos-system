@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
 import Header from '../components/Header';
 import CategoryTabs from '../components/pos/CategoryTabs';
 import SearchBar from '../components/pos/SearchBar';
@@ -8,88 +8,40 @@ import ProductGrid from '../components/pos/ProductGrid';
 import ActiveTicket from '../components/pos/ActiveTicket';
 import Link from 'next/link';
 import { ShoppingCart, ChevronRight, ArrowLeft } from 'lucide-react';
-import { useAxiosSecure } from '../hooks/useApi';
+import { 
+  useCategoriesQuery, 
+  useProductsQuery, 
+  useStaffQuery, 
+  usePresetDiscountsQuery, 
+  useCustomersQuery, 
+  useCreateCustomerMutation, 
+  useCheckoutTransactionMutation 
+} from '../hooks/queries/useCatalogQueries';
 import { useAuth } from '../context/AuthContext';
 import { useCartStore } from '../store/useCartStore';
 import { formatCurrency } from '../utils/currency';
-import { offlineDb } from '../utils/offlineDb';
 
 export default function PosPage() {
-  const axiosSecure = useAxiosSecure();
   const { currency } = useAuth();
   const { addItem, items, globalDiscount, notes, getTotals } = useCartStore();
   const totals = getTotals();
   const [mobileActiveView, setMobileActiveView] = useState('catalog'); // 'catalog' | 'ticket'
 
-  const [categories, setCategories] = useState([]);
-  const [products, setProducts] = useState([]);
-  const [staffMembers, setStaffMembers] = useState([]);
-  const [presetDiscounts, setPresetDiscounts] = useState([]);
-  const [customers, setCustomers] = useState([]);
+  const { data: categories = [], isLoading: categoriesLoading } = useCategoriesQuery();
+  const { data: products = [], isLoading: productsLoading } = useProductsQuery();
+  const { data: staffMembers = [] } = useStaffQuery();
+  const { data: presetDiscounts = [] } = usePresetDiscountsQuery();
+  const { data: customers = [] } = useCustomersQuery();
   
+  const createCustomerMutation = useCreateCustomerMutation();
+  const checkoutMutation = useCheckoutTransactionMutation();
+
   const [activeCategoryId, setActiveCategoryId] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
-  const [loading, setLoading] = useState(true);
-
-  // Load Catalog & Configuration
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        setLoading(true);
-
-        const [catRes, prodRes, staffRes, discRes, custRes] = await Promise.all([
-          axiosSecure.get('/api/categories').catch(() => null),
-          axiosSecure.get('/api/products').catch(() => null),
-          axiosSecure.get('/api/staff').catch(() => null),
-          axiosSecure.get('/api/discounts/presets').catch(() => null),
-          axiosSecure.get('/api/customers').catch(() => null)
-        ]);
-
-        if (catRes?.data?.success) {
-          setCategories(catRes.data.data);
-          // Cache to IndexedDB
-          offlineDb.categories.bulkPut(catRes.data.data).catch(() => {});
-        } else {
-          // Offline fallback
-          const cachedCats = await offlineDb.categories.toArray();
-          if (cachedCats.length > 0) setCategories(cachedCats);
-        }
-
-        if (prodRes?.data?.success) {
-          setProducts(prodRes.data.data);
-          offlineDb.products.bulkPut(prodRes.data.data).catch(() => {});
-        } else {
-          const cachedProds = await offlineDb.products.toArray();
-          if (cachedProds.length > 0) setProducts(cachedProds);
-        }
-
-        if (staffRes?.data?.success) setStaffMembers(staffRes.data.data);
-        if (discRes?.data?.success) setPresetDiscounts(discRes.data.data);
-        if (custRes?.data?.success) setCustomers(custRes.data.data);
-      } catch (err) {
-        console.error('Failed to load POS data:', err);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchData();
-  }, [axiosSecure]);
+  const loading = categoriesLoading || productsLoading;
 
   const handleCreateCustomer = async ({ name, phone }) => {
-    try {
-      const res = await axiosSecure.post('/api/customers', { name, phone });
-      if (res.data?.success) {
-        setCustomers((prev) => {
-          const exists = prev.some((c) => c._id === res.data.data._id);
-          return exists ? prev : [res.data.data, ...prev];
-        });
-        return res.data.data;
-      }
-    } catch (err) {
-      console.error('Failed to create customer:', err);
-      throw err;
-    }
+    return await createCustomerMutation.mutateAsync({ name, phone });
   };
 
   // Real-time catalog filtering
@@ -131,6 +83,7 @@ export default function PosPage() {
     const payload = {
       items: items.map((i) => ({
         productId: i.productId,
+        categoryId: i.categoryId || undefined,
         productNameSnapshot: i.productNameSnapshot,
         skuSnapshot: i.skuSnapshot,
         categoryNameSnapshot: i.categoryNameSnapshot,
@@ -151,36 +104,7 @@ export default function PosPage() {
       notes: customNotes !== undefined ? customNotes : notes
     };
 
-    try {
-      const response = await axiosSecure.post('/api/transactions', payload, {
-        headers: { 'x-idempotency-key': idempotencyKey }
-      });
-      return response.data;
-    } catch (error) {
-      // Offline transaction queueing
-      if (!navigator.onLine) {
-        const clientTxnUuid = `OFFLINE_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-        await offlineDb.offlineQueue.add({
-          clientTxnUuid,
-          payload,
-          timestamp: new Date().toISOString(),
-          status: 'PENDING_SYNC'
-        });
-
-        return {
-          success: true,
-          data: {
-            txnNumber: `${clientTxnUuid} (Queued)`,
-            status,
-            grandTotalInCents: items.reduce((acc, i) => acc + i.finalLineTotalInCents, 0),
-            staffNameSnapshot: staffMembers.find((s) => s._id === staffMemberId)?.fullName,
-            roomNumber: payload.roomNumber,
-            guestName: payload.guestName
-          }
-        };
-      }
-      throw error;
-    }
+    return await checkoutMutation.mutateAsync({ payload, idempotencyKey, staffMembers });
   };
 
   return (

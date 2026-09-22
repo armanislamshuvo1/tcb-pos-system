@@ -10,7 +10,10 @@ exports.getProducts = async (req, res, next) => {
     const query = {};
 
     // Multi-tenant scoping: Non-system admins only see their company's products
-    if (req.user && req.user.role !== 'system_admin' && req.user.companyId) {
+    if (req.user && req.user.role !== 'system_admin') {
+      if (!req.user.companyId) {
+        return res.status(200).json({ success: true, data: [] });
+      }
       query.companyId = req.user.companyId;
     }
 
@@ -74,7 +77,13 @@ exports.createProduct = async (req, res, next) => {
       });
     }
 
-    // Verify category exists
+    if (req.user.role !== 'system_admin' && !req.user.companyId) {
+      return res.status(403).json({ success: false, message: 'Unauthorized: No company associated' });
+    }
+
+    const assignedCompanyId = req.user.role === 'system_admin' ? (companyId || null) : req.user.companyId;
+
+    // Verify category exists and belongs to this company
     const category = await Category.findById(categoryId);
     if (!category) {
       return res.status(404).json({
@@ -83,7 +92,12 @@ exports.createProduct = async (req, res, next) => {
       });
     }
 
-    const assignedCompanyId = req.user.role === 'system_admin' ? (companyId || null) : req.user.companyId;
+    if (assignedCompanyId && category.companyId && category.companyId.toString() !== assignedCompanyId.toString()) {
+      return res.status(400).json({
+        success: false,
+        message: 'The specified Category does not belong to your company'
+      });
+    }
 
     const existingSku = await Product.findOne({ 
       companyId: assignedCompanyId, 
@@ -149,7 +163,7 @@ exports.updateProduct = async (req, res, next) => {
 
     // Tenant check: Non-system admins cannot modify products outside their company
     if (req.user.role !== 'system_admin') {
-      if (product.companyId && req.user.companyId && product.companyId.toString() !== req.user.companyId.toString()) {
+      if (!product.companyId || !req.user.companyId || product.companyId.toString() !== req.user.companyId.toString()) {
         return res.status(403).json({ success: false, message: 'Unauthorized to edit this company product' });
       }
     }
@@ -176,6 +190,9 @@ exports.updateProduct = async (req, res, next) => {
       const category = await Category.findById(categoryId);
       if (!category) {
         return res.status(404).json({ success: false, message: 'New Category not found' });
+      }
+      if (product.companyId && category.companyId && category.companyId.toString() !== product.companyId.toString()) {
+        return res.status(400).json({ success: false, message: 'The specified Category does not belong to this company' });
       }
       product.categoryId = category._id;
       product.categoryNameSnapshot = category.name;
@@ -205,7 +222,7 @@ exports.deleteProduct = async (req, res, next) => {
     }
 
     if (req.user.role !== 'system_admin') {
-      if (product.companyId && req.user.companyId && product.companyId.toString() !== req.user.companyId.toString()) {
+      if (!product.companyId || !req.user.companyId || product.companyId.toString() !== req.user.companyId.toString()) {
         return res.status(403).json({ success: false, message: 'Unauthorized to delete this company product' });
       }
     }

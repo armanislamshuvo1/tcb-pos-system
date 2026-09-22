@@ -82,9 +82,31 @@ exports.getConsolidatedStaffTabs = async (req, res, next) => {
       { $sort: { totalOwedInCents: -1 } }
     ]);
 
+    // Reconcile totalOwedInCents with actual transaction grand totals to account for global ticket discounts
+    const staffTransactionTotals = await Transaction.aggregate([
+      { $match: matchStage },
+      {
+        $group: {
+          _id: '$staffMemberId',
+          totalOwedInCents: { $sum: '$grandTotalInCents' }
+        }
+      }
+    ]);
+    const staffTotalsMap = new Map();
+    for (const st of staffTransactionTotals) {
+      if (st._id) staffTotalsMap.set(st._id.toString(), st.totalOwedInCents);
+    }
+
+    const reconciledTabs = consolidatedTabs.map((tab) => ({
+      ...tab,
+      totalOwedInCents: tab._id && staffTotalsMap.has(tab._id.toString())
+        ? staffTotalsMap.get(tab._id.toString())
+        : tab.totalOwedInCents
+    })).sort((a, b) => b.totalOwedInCents - a.totalOwedInCents);
+
     res.status(200).json({
       success: true,
-      data: consolidatedTabs
+      data: reconciledTabs
     });
   } catch (error) {
     next(error);
@@ -160,24 +182,29 @@ exports.settleTransactions = async (req, res, next) => {
     const cashierId = req.user.mongoId;
     const cashierNameSnapshot = req.user.fullName;
 
-    // Verify all transactions exist and are UNPAID_TAB
-    const pendingTxns = await Transaction.find({
+    // Verify all transactions exist and are UNPAID_TAB (scoped to company for non-system admins)
+    const filter = {
       _id: { $in: transactionIds },
       status: 'UNPAID_TAB'
-    }).session(session);
+    };
+    if (req.user && req.user.role !== 'system_admin' && req.user.companyId) {
+      filter.companyId = req.user.companyId;
+    }
+
+    const pendingTxns = await Transaction.find(filter).session(session);
 
     if (pendingTxns.length !== transactionIds.length) {
       await session.abortTransaction();
       session.endSession();
       return res.status(400).json({
         success: false,
-        message: 'One or more selected transactions are already settled or do not exist'
+        message: 'One or more selected transactions are already settled, do not exist, or belong to another company'
       });
     }
 
     // Atomic whole-transaction status update
     await Transaction.updateMany(
-      { _id: { $in: transactionIds } },
+      filter,
       {
         $set: {
           status: 'PAID',
@@ -194,13 +221,13 @@ exports.settleTransactions = async (req, res, next) => {
     await session.commitTransaction();
     session.endSession();
 
-    // Broadcast SSE update across all cashier terminals
+    // Broadcast SSE update scoped to this company's cashier terminals
     broadcastUpdate('tabs_settled', {
       transactionIds,
       settledAt,
       settledBy: cashierNameSnapshot,
       count: pendingTxns.length
-    });
+    }, req.user?.companyId);
 
     res.status(200).json({
       success: true,
@@ -229,10 +256,7 @@ exports.getUnpaidTabsByProduct = async (req, res, next) => {
     };
 
     if (req.user?.companyId && req.user.role !== 'system_admin') {
-      matchStage.$or = [
-        { companyId: new mongoose.Types.ObjectId(req.user.companyId) },
-        { companyId: null }
-      ];
+      matchStage.companyId = new mongoose.Types.ObjectId(req.user.companyId);
     }
 
     const pipeline = [
@@ -721,10 +745,7 @@ exports.getAllUnpaidBills = async (req, res, next) => {
     const matchStage = { status: 'UNPAID_TAB' };
 
     if (req.user?.companyId && req.user.role !== 'system_admin') {
-      matchStage.$or = [
-        { companyId: new mongoose.Types.ObjectId(req.user.companyId) },
-        { companyId: null }
-      ];
+      matchStage.companyId = new mongoose.Types.ObjectId(req.user.companyId);
     }
 
     if (billType && billType !== 'ALL') {
@@ -828,13 +849,10 @@ exports.revertSettlement = async (req, res, next) => {
       });
     }
 
-    // Fetch transactions
+    // Fetch transactions (strictly scoped by company)
     const query = { _id: { $in: targetIds } };
     if (req.user && req.user.role !== 'system_admin' && req.user.companyId) {
-      query.$or = [
-        { companyId: new mongoose.Types.ObjectId(req.user.companyId) },
-        { companyId: null }
-      ];
+      query.companyId = new mongoose.Types.ObjectId(req.user.companyId);
     }
 
     const transactions = await Transaction.find(query).session(session);
@@ -895,18 +913,18 @@ exports.revertSettlement = async (req, res, next) => {
     await session.commitTransaction();
     session.endSession();
 
-    // Broadcast SSE update across all cashier terminals
+    // Broadcast SSE update across company cashier terminals
     broadcastUpdate('settlement_reverted', {
       transactionIds: targetIds,
       revertedAt,
       revertedBy: staffName,
       reason: revertReasonTrimmed,
       count: transactions.length
-    });
+    }, req.user?.companyId);
     broadcastUpdate('tabs_settled', {
       transactionIds: targetIds,
       reverted: true
-    });
+    }, req.user?.companyId);
 
     res.status(200).json({
       success: true,
@@ -938,10 +956,7 @@ exports.getRecentlySettledBills = async (req, res, next) => {
     };
 
     if (req.user?.companyId && req.user.role !== 'system_admin') {
-      matchStage.$or = [
-        { companyId: new mongoose.Types.ObjectId(req.user.companyId) },
-        { companyId: null }
-      ];
+      matchStage.companyId = new mongoose.Types.ObjectId(req.user.companyId);
     }
 
     if (search && search.trim()) {

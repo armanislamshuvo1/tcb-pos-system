@@ -6,7 +6,10 @@ const Category = require('../models/Category');
 exports.getCategories = async (req, res, next) => {
   try {
     const query = { isActive: true };
-    if (req.user && req.user.role !== 'system_admin' && req.user.companyId) {
+    if (req.user && req.user.role !== 'system_admin') {
+      if (!req.user.companyId) {
+        return res.status(200).json({ success: true, data: [] });
+      }
       query.companyId = req.user.companyId;
     }
 
@@ -37,6 +40,10 @@ exports.createCategory = async (req, res, next) => {
     const slug = name.trim().toLowerCase()
       .replace(/[^a-z0-9]+/g, '-')
       .replace(/(^-|-$)+/g, '');
+
+    if (req.user.role !== 'system_admin' && !req.user.companyId) {
+      return res.status(403).json({ success: false, message: 'Unauthorized: No company associated' });
+    }
 
     const assignedCompanyId = req.user.role === 'system_admin' ? (companyId || null) : req.user.companyId;
 
@@ -80,7 +87,7 @@ exports.updateCategory = async (req, res, next) => {
     }
 
     if (req.user.role !== 'system_admin') {
-      if (category.companyId && req.user.companyId && category.companyId.toString() !== req.user.companyId.toString()) {
+      if (!category.companyId || !req.user.companyId || category.companyId.toString() !== req.user.companyId.toString()) {
         return res.status(403).json({ success: false, message: 'Unauthorized to edit this company category' });
       }
     }
@@ -120,7 +127,7 @@ exports.deleteCategory = async (req, res, next) => {
     }
 
     if (req.user.role !== 'system_admin') {
-      if (category.companyId && req.user.companyId && category.companyId.toString() !== req.user.companyId.toString()) {
+      if (!category.companyId || !req.user.companyId || category.companyId.toString() !== req.user.companyId.toString()) {
         return res.status(403).json({ success: false, message: 'Unauthorized to deactivate this company category' });
       }
     }

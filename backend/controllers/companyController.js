@@ -320,13 +320,8 @@ exports.getMyCompany = async (req, res, next) => {
       company = await Company.findById(req.user.companyId);
     }
     
-    // If no company linked, return the first active company or default fallback
     if (!company) {
-      company = await Company.findOne({ isActive: true });
-    }
-
-    if (!company) {
-      // Fallback default
+      // Return neutral platform fallback without leaking another tenant's profile
       return res.status(200).json({
         success: true,
         data: {
@@ -353,17 +348,21 @@ exports.getMyCompany = async (req, res, next) => {
 exports.updateMyCompanySettings = async (req, res, next) => {
   try {
     const { currency, branding } = req.body;
-    
+
+    if (!req.user.companyId && req.user.role !== 'system_admin') {
+      return res.status(400).json({
+        success: false,
+        message: 'Your account is not associated with any company profile'
+      });
+    }
+
     let company = null;
     if (req.user.companyId) {
       company = await Company.findById(req.user.companyId);
     }
-    if (!company) {
-      company = await Company.findOne({ isActive: true });
-    }
 
     if (!company) {
-      return res.status(404).json({ success: false, message: 'Company not found' });
+      return res.status(404).json({ success: false, message: 'Company profile not found' });
     }
 
     if (currency) {

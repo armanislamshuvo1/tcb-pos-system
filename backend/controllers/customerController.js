@@ -1,4 +1,4 @@
-﻿const Customer = require('../models/Customer');
+const Customer = require('../models/Customer');
 
 // @desc    Get all active customers for current company with optional search
 // @route   GET /api/customers
@@ -8,7 +8,10 @@ exports.getCustomers = async (req, res, next) => {
     const { search } = req.query;
     const query = { isActive: true };
 
-    if (req.user.companyId && req.user.role !== 'system_admin') {
+    if (req.user.role !== 'system_admin') {
+      if (!req.user.companyId) {
+        return res.status(200).json({ success: true, count: 0, data: [] });
+      }
       query.companyId = req.user.companyId;
     }
 
@@ -49,6 +52,9 @@ exports.createCustomer = async (req, res, next) => {
       });
     }
 
+    if (req.user.role !== 'system_admin' && !req.user.companyId) {
+      return res.status(403).json({ success: false, message: 'Unauthorized: No company associated' });
+    }
     const companyId = req.user.companyId || null;
 
     // Check if an active customer with identical name already exists in this company
@@ -94,7 +100,10 @@ exports.updateCustomer = async (req, res, next) => {
     const { name, phone, email, notes, isActive } = req.body;
 
     const query = { _id: id };
-    if (req.user.companyId && req.user.role !== 'system_admin') {
+    if (req.user.role !== 'system_admin') {
+      if (!req.user.companyId) {
+        return res.status(403).json({ success: false, message: 'Unauthorized' });
+      }
       query.companyId = req.user.companyId;
     }
 

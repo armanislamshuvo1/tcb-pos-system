@@ -6,6 +6,10 @@ const lineItemSchema = new mongoose.Schema({
     ref: 'Product', 
     required: true 
   },
+  categoryId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Category'
+  },
   productNameSnapshot: { type: String, required: true },
   skuSnapshot: { type: String, required: true },
   categoryNameSnapshot: { type: String, default: '' },
@@ -92,6 +96,7 @@ const transactionSchema = new mongoose.Schema({
   },
   globalDiscountValue: { type: Number, default: 0 },
   globalDiscountInCents: { type: Number, default: 0 },
+  totalDiscountInCents: { type: Number, default: 0 },
   grandTotalInCents: { type: Number, required: true },
 
   // Settlement Tracking (Whole Transaction Level)
@@ -131,6 +136,8 @@ const transactionSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 // Compound Indexes for Rapid Ledger Queries & Aggregations
+transactionSchema.index({ companyId: 1, createdAt: -1, status: 1 });
+transactionSchema.index({ companyId: 1, status: 1 });
 transactionSchema.index({ createdAt: -1, status: 1 });
 transactionSchema.index({ settledAt: -1, status: 1 });
 transactionSchema.index({ staffMemberId: 1, status: 1 });

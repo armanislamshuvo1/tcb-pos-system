@@ -1,6 +1,7 @@
 'use client';
 
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { publicApi } from '../utils/apiConfig';
 
 const AuthContext = createContext(null);
@@ -30,6 +31,8 @@ export const AuthProvider = ({ children }) => {
     }
   }, []);
 
+  const queryClient = useQueryClient();
+
   const loginWithPin = async (identifier, pinCode, deviceId) => {
     try {
       const payload = {
@@ -45,6 +48,7 @@ export const AuthProvider = ({ children }) => {
 
       if (res.data?.success) {
         const { token: newToken, user: newUser } = res.data.data;
+        queryClient.clear();
         setToken(newToken);
         setUser(newUser);
 
@@ -68,9 +72,10 @@ export const AuthProvider = ({ children }) => {
     localStorage.removeItem('pos_user_role');
     localStorage.removeItem('pos_user_name');
     localStorage.removeItem('pos_user_code');
+    queryClient.clear();
     setUser(null);
     setToken(null);
-  }, []);
+  }, [queryClient]);
 
   const lockTerminal = useCallback(() => {
     logout();
