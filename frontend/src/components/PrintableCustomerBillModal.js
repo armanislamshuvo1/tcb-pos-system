@@ -8,12 +8,7 @@ import {
   X,
   FileText,
   Receipt,
-  User,
-  CheckCircle,
-  Clock,
-  Sparkles,
-  Building2,
-  CheckSquare
+  Tag
 } from 'lucide-react';
 
 export default function PrintableCustomerBillModal({
@@ -56,7 +51,7 @@ export default function PrintableCustomerBillModal({
     return transactions.filter((t) => t.status !== 'VOIDED');
   }, [transactions, filterMode]);
 
-  // Aggregate items across all filtered transactions for consolidated view
+  // Aggregate items across all filtered transactions for consolidated view with discount tracking
   const consolidatedItems = useMemo(() => {
     const map = new Map();
     filteredTransactions.forEach((txn) => {
@@ -69,13 +64,20 @@ export default function PrintableCustomerBillModal({
             unitPriceInCents: item.unitPriceInCents || 0,
             quantity: 0,
             totalLineAmountInCents: 0,
-            totalDiscountInCents: 0
+            totalDiscountInCents: 0,
+            totalOriginalAmountInCents: 0
           });
         }
         const existing = map.get(prodId);
-        existing.quantity += item.quantity || 1;
-        existing.totalLineAmountInCents += item.finalLineTotalInCents || 0;
-        existing.totalDiscountInCents += item.lineDiscountInCents || 0;
+        const qty = item.quantity || 1;
+        const discountInCents = item.lineDiscountInCents || 0;
+        const finalLineTotal = item.finalLineTotalInCents ?? ((item.unitPriceInCents || 0) * qty - discountInCents);
+        const originalLineTotal = (item.unitPriceInCents || 0) * qty;
+
+        existing.quantity += qty;
+        existing.totalLineAmountInCents += finalLineTotal;
+        existing.totalDiscountInCents += discountInCents;
+        existing.totalOriginalAmountInCents += originalLineTotal;
       });
     });
     return Array.from(map.values()).sort((a, b) => b.totalLineAmountInCents - a.totalLineAmountInCents);
@@ -83,6 +85,13 @@ export default function PrintableCustomerBillModal({
 
   const computedTotalDueInCents = useMemo(() => {
     return filteredTransactions.reduce((acc, t) => acc + (t.grandTotalInCents || 0), 0);
+  }, [filteredTransactions]);
+
+  const totalDiscountInCents = useMemo(() => {
+    return filteredTransactions.reduce(
+      (acc, t) => acc + (t.items || []).reduce((iAcc, item) => iAcc + (item.lineDiscountInCents || 0), 0),
+      0
+    );
   }, [filteredTransactions]);
 
   const totalItemsCount = useMemo(() => {
@@ -132,24 +141,49 @@ export default function PrintableCustomerBillModal({
         <table class="data-table">
           <thead>
             <tr>
-              <th style="width: 48%;">Product Description</th>
-              <th class="text-center" style="width: 14%;">Qty</th>
+              <th style="width: 38%;">Product Description</th>
+              <th class="text-center" style="width: 10%;">Qty</th>
               <th class="text-right" style="width: 18%;">Unit Price</th>
-              <th class="text-right" style="width: 20%;">Total</th>
+              <th class="text-right" style="width: 16%;">Discount</th>
+              <th class="text-right" style="width: 18%;">Line Total</th>
             </tr>
           </thead>
           <tbody>
             ${consolidatedItems
-              .map(
-                (item) => `
-              <tr>
-                <td class="font-bold">${item.productName}</td>
-                <td class="text-center">${item.quantity}</td>
-                <td class="text-right font-mono">${formatCurrency(item.unitPriceInCents, currency)}</td>
-                <td class="text-right font-mono font-bold">${formatCurrency(item.totalLineAmountInCents, currency)}</td>
-              </tr>
-            `
-              )
+              .map((item) => {
+                const hasDiscount = (item.totalDiscountInCents || 0) > 0;
+                const discountedUnitPrice = hasDiscount
+                  ? Math.round(item.totalLineAmountInCents / (item.quantity || 1))
+                  : item.unitPriceInCents;
+                return `
+                <tr>
+                  <td>
+                    <div class="font-bold">${item.productName}</div>
+                    ${hasDiscount ? `<div style="font-size: 8.5px; color: #dc2626; font-weight: 600;">Save ${formatCurrency(item.totalDiscountInCents, currency)}</div>` : ''}
+                  </td>
+                  <td class="text-center font-mono">${item.quantity}</td>
+                  <td class="text-right font-mono">
+                    ${hasDiscount ? `
+                      <div><strong>${formatCurrency(discountedUnitPrice, currency)}</strong></div>
+                      <div style="font-size: 8.5px; color: #94a3b8; text-decoration: line-through;">${formatCurrency(item.unitPriceInCents, currency)}</div>
+                    ` : `
+                      <span>${formatCurrency(item.unitPriceInCents, currency)}</span>
+                    `}
+                  </td>
+                  <td class="text-right font-mono">
+                    ${hasDiscount ? `
+                      <span style="color: #dc2626; font-weight: 700;">-${formatCurrency(item.totalDiscountInCents, currency)}</span>
+                    ` : `
+                      <span style="color: #94a3b8;">&mdash;</span>
+                    `}
+                  </td>
+                  <td class="text-right font-mono font-bold">
+                    <div>${formatCurrency(item.totalLineAmountInCents, currency)}</div>
+                    ${hasDiscount ? `<div style="font-size: 8.5px; color: #94a3b8; text-decoration: line-through; font-weight: normal;">${formatCurrency(item.totalOriginalAmountInCents, currency)}</div>` : ''}
+                  </td>
+                </tr>
+              `;
+              })
               .join('')}
           </tbody>
         </table>
@@ -167,18 +201,41 @@ export default function PrintableCustomerBillModal({
                   <span class="font-mono font-bold">${formatCurrency(txn.grandTotalInCents, currency)}</span>
                 </div>
                 <table class="data-table" style="margin-bottom: 0;">
+                  <thead>
+                    <tr style="background: #f8fafc; font-size: 8.5px;">
+                      <th style="width: 38%;">Item</th>
+                      <th class="text-center" style="width: 10%;">Qty</th>
+                      <th class="text-right" style="width: 18%;">Unit Price</th>
+                      <th class="text-right" style="width: 16%;">Discount</th>
+                      <th class="text-right" style="width: 18%;">Total</th>
+                    </tr>
+                  </thead>
                   <tbody>
                     ${(txn.items || [])
-                      .map(
-                        (item) => `
-                      <tr>
-                        <td style="width: 50%;">${item.productNameSnapshot || 'Product'}</td>
-                        <td class="text-center" style="width: 14%;">${item.quantity || 1}</td>
-                        <td class="text-right font-mono" style="width: 18%;">${formatCurrency(item.unitPriceInCents || 0, currency)}</td>
-                        <td class="text-right font-mono font-bold" style="width: 18%;">${formatCurrency(item.finalLineTotalInCents || 0, currency)}</td>
-                      </tr>
-                    `
-                      )
+                      .map((item) => {
+                        const hasDisc = (item.lineDiscountInCents || 0) > 0;
+                        const discountedUnit = hasDisc
+                          ? Math.round((item.finalLineTotalInCents || 0) / (item.quantity || 1))
+                          : (item.unitPriceInCents || 0);
+                        return `
+                        <tr>
+                          <td>${item.productNameSnapshot || 'Product'}</td>
+                          <td class="text-center font-mono">${item.quantity || 1}</td>
+                          <td class="text-right font-mono">
+                            ${hasDisc ? `
+                              <div><strong>${formatCurrency(discountedUnit, currency)}</strong></div>
+                              <div style="font-size: 8px; color: #94a3b8; text-decoration: line-through;">${formatCurrency(item.unitPriceInCents || 0, currency)}</div>
+                            ` : `
+                              <span>${formatCurrency(item.unitPriceInCents || 0, currency)}</span>
+                            `}
+                          </td>
+                          <td class="text-right font-mono">
+                            ${hasDisc ? `<span style="color: #dc2626; font-weight: 700;">-${formatCurrency(item.lineDiscountInCents, currency)}</span>` : `<span style="color: #94a3b8;">&mdash;</span>`}
+                          </td>
+                          <td class="text-right font-mono font-bold">${formatCurrency(item.finalLineTotalInCents || 0, currency)}</td>
+                        </tr>
+                      `;
+                      })
                       .join('')}
                   </tbody>
                 </table>
@@ -366,7 +423,7 @@ export default function PrintableCustomerBillModal({
               margin-bottom: 10px;
             }
             .summary-box {
-              width: 250px;
+              width: 260px;
               background: #f8fafc;
               border: 1px solid #cbd5e1;
               border-radius: 6px;
@@ -454,8 +511,14 @@ export default function PrintableCustomerBillModal({
                 <div class="meta-card-title">Account Balance Summary</div>
                 <div class="meta-card-row">
                   <span>Total Line Items:</span>
-                  <strong>${totalItemsCount} items</strong>
+                  <strong>${totalItemsCount} units</strong>
                 </div>
+                ${totalDiscountInCents > 0 ? `
+                  <div class="meta-card-row" style="color: #dc2626;">
+                    <span>Total Discount Savings:</span>
+                    <strong class="font-mono">-${formatCurrency(totalDiscountInCents, currency)}</strong>
+                  </div>
+                ` : ''}
                 <div class="meta-card-row" style="align-items: baseline; margin-top: 2px;">
                   <span>Balance Due:</span>
                   <span class="balance-amount">${formatCurrency(computedTotalDueInCents, currency)}</span>
@@ -512,6 +575,12 @@ export default function PrintableCustomerBillModal({
                   <span>Total Units Sold:</span>
                   <strong>${totalItemsCount}</strong>
                 </div>
+                ${totalDiscountInCents > 0 ? `
+                  <div class="summary-row" style="color: #dc2626;">
+                    <span>Total Discount Savings:</span>
+                    <strong class="font-mono">-${formatCurrency(totalDiscountInCents, currency)}</strong>
+                  </div>
+                ` : ''}
                 <div class="summary-row grand-total">
                   <span>TOTAL BALANCE DUE:</span>
                   <span class="font-mono">${formatCurrency(computedTotalDueInCents, currency)}</span>
@@ -619,20 +688,33 @@ export default function PrintableCustomerBillModal({
               breakdownMode === 'consolidated'
                 ? `
               <div class="flex-between font-bold" style="border-bottom: 1px solid #000; padding-bottom: 2px;">
-                <span style="width: 50%;">Item</span>
-                <span style="width: 20%; text-align: center;">Qty</span>
-                <span style="width: 30%; text-align: right;">Amount</span>
+                <span style="width: 44%;">Item</span>
+                <span style="width: 14%; text-align: center;">Qty</span>
+                <span style="width: 22%; text-align: right;">Price</span>
+                <span style="width: 20%; text-align: right;">Total</span>
               </div>
               ${consolidatedItems
-                .map(
-                  (item) => `
-                <div class="flex-between" style="margin: 2px 0;">
-                  <span style="width: 50%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${item.productName}</span>
-                  <span style="width: 20%; text-align: center;">${item.quantity}</span>
-                  <span style="width: 30%; text-align: right; font-weight: bold;">${formatCurrency(item.totalLineAmountInCents, currency)}</span>
-                </div>
-              `
-                )
+                .map((item) => {
+                  const hasDiscount = (item.totalDiscountInCents || 0) > 0;
+                  const discountedUnitPrice = hasDiscount
+                    ? Math.round(item.totalLineAmountInCents / (item.quantity || 1))
+                    : item.unitPriceInCents;
+                  return `
+                  <div style="margin: 2px 0;">
+                    <div class="flex-between">
+                      <span style="width: 44%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${item.productName}</span>
+                      <span style="width: 14%; text-align: center;">${item.quantity}</span>
+                      <span style="width: 22%; text-align: right;">${formatCurrency(hasDiscount ? discountedUnitPrice : item.unitPriceInCents, currency)}</span>
+                      <span style="width: 20%; text-align: right; font-weight: bold;">${formatCurrency(item.totalLineAmountInCents, currency)}</span>
+                    </div>
+                    ${hasDiscount ? `
+                      <div style="font-size: 9.5px; color: #444; padding-left: 2px;">
+                        * Disc: -${formatCurrency(item.totalDiscountInCents, currency)} (Orig: ${formatCurrency(item.unitPriceInCents, currency)})
+                      </div>
+                    ` : ''}
+                  </div>
+                `;
+                })
                 .join('')}
             `
                 : `
@@ -645,14 +727,22 @@ export default function PrintableCustomerBillModal({
                     <span>${formatCurrency(txn.grandTotalInCents, currency)}</span>
                   </div>
                   ${(txn.items || [])
-                    .map(
-                      (item) => `
-                    <div class="flex-between" style="font-size: 10px; margin: 1px 0; padding-left: 4px;">
-                      <span>${item.quantity}x ${item.productNameSnapshot}</span>
-                      <span>${formatCurrency(item.finalLineTotalInCents, currency)}</span>
-                    </div>
-                  `
-                    )
+                    .map((item) => {
+                      const hasDisc = (item.lineDiscountInCents || 0) > 0;
+                      return `
+                      <div style="font-size: 10px; margin: 1px 0; padding-left: 4px;">
+                        <div class="flex-between">
+                          <span>${item.quantity}x ${item.productNameSnapshot}</span>
+                          <span>${formatCurrency(item.finalLineTotalInCents, currency)}</span>
+                        </div>
+                        ${hasDisc ? `
+                          <div style="font-size: 9px; color: #555;">
+                            * Disc: -${formatCurrency(item.lineDiscountInCents, currency)}
+                          </div>
+                        ` : ''}
+                      </div>
+                    `;
+                    })
                     .join('')}
                 </div>
               `
@@ -668,6 +758,12 @@ export default function PrintableCustomerBillModal({
               <span>Total Items:</span>
               <strong>${totalItemsCount} items</strong>
             </div>
+            ${totalDiscountInCents > 0 ? `
+              <div class="flex-between" style="color: #000;">
+                <span>Total Savings:</span>
+                <strong>-${formatCurrency(totalDiscountInCents, currency)}</strong>
+              </div>
+            ` : ''}
             <div class="flex-between font-bold" style="font-size: 14px; border-top: 2px solid #000; padding-top: 4px; margin-top: 3px;">
               <span>TOTAL DUE:</span>
               <span>${formatCurrency(computedTotalDueInCents, currency)}</span>
@@ -750,14 +846,14 @@ export default function PrintableCustomerBillModal({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[70] bg-black/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-6 overflow-y-auto animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-[70] bg-black/80 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4 overflow-hidden animate-in fade-in duration-200">
       {/* Click outside backdrop handler */}
       <div className="fixed inset-0" onClick={onClose} />
 
       {/* Main Dialog Container */}
-      <div className="relative bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-4xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh] z-10 animate-in zoom-in-95 duration-150 print:hidden">
+      <div className="relative bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-4xl shadow-2xl overflow-hidden flex flex-col h-[92vh] max-h-[92vh] z-10 animate-in zoom-in-95 duration-150 print:hidden">
         {/* Header */}
-        <div className="p-5 border-b border-slate-800 flex items-center justify-between bg-slate-850/90 shrink-0">
+        <div className="p-4 sm:p-5 border-b border-slate-800 flex items-center justify-between bg-slate-850/90 shrink-0">
           <div className="flex items-center space-x-3">
             <div className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-400 flex items-center justify-center">
               <Printer className="w-5 h-5" />
@@ -783,7 +879,7 @@ export default function PrintableCustomerBillModal({
         </div>
 
         {/* Controls Bar */}
-        <div className="p-4 border-b border-slate-800 bg-slate-900/90 flex flex-wrap items-center justify-between gap-3 text-xs shrink-0">
+        <div className="p-3 sm:p-4 border-b border-slate-800 bg-slate-900/90 flex flex-wrap items-center justify-between gap-3 text-xs shrink-0">
           {/* Filter Scope */}
           <div className="flex items-center space-x-2">
             <span className="text-slate-400 font-medium">Scope:</span>
@@ -875,7 +971,7 @@ export default function PrintableCustomerBillModal({
         </div>
 
         {/* Paper format status pill */}
-        <div className="px-5 py-2 bg-slate-950 border-b border-slate-800/80 flex items-center justify-between text-xs text-slate-400">
+        <div className="px-5 py-2 bg-slate-950 border-b border-slate-800/80 flex items-center justify-between text-xs text-slate-400 shrink-0">
           <div className="flex items-center space-x-2">
             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
             <span>
@@ -891,11 +987,11 @@ export default function PrintableCustomerBillModal({
           </span>
         </div>
 
-        {/* Scrollable Receipt / Statement Preview */}
-        <div className="flex-1 overflow-y-auto p-4 sm:p-6 bg-slate-950/80 flex justify-center">
+        {/* Scrollable Receipt / Statement Preview with Guaranteed Scroll Boundary */}
+        <div className="flex-1 min-h-0 overflow-y-auto p-4 sm:p-6 bg-slate-950/80 flex justify-center items-start scrollbar-thin scrollbar-thumb-slate-700 hover:scrollbar-thumb-slate-600 scrollbar-track-slate-900">
           {printFormat === 'statement' ? (
             /* A4 Statement Preview */
-            <div className="bg-white text-slate-900 p-8 rounded-xl shadow-2xl w-full max-w-3xl text-xs space-y-5 border border-slate-300">
+            <div className="bg-white text-slate-900 p-6 sm:p-8 rounded-xl shadow-2xl w-full max-w-3xl text-xs space-y-5 border border-slate-300 mb-10 shrink-0">
               {/* Header */}
               <div className="flex justify-between items-start border-b-2 border-slate-900 pb-3">
                 <div>
@@ -940,6 +1036,12 @@ export default function PrintableCustomerBillModal({
                     <span className="text-slate-600">Total Items:</span>
                     <strong>{totalItemsCount} units</strong>
                   </div>
+                  {totalDiscountInCents > 0 && (
+                    <div className="flex justify-between text-[11px] text-rose-600 font-semibold">
+                      <span>Total Savings:</span>
+                      <span className="font-mono">-{formatCurrency(totalDiscountInCents, currency)}</span>
+                    </div>
+                  )}
                   <div className="flex justify-between items-baseline pt-1">
                     <span className="text-slate-700 font-bold text-xs">Total Balance Due:</span>
                     <span className="text-lg font-black text-amber-600 font-mono">
@@ -989,58 +1091,144 @@ export default function PrintableCustomerBillModal({
                 </table>
               </div>
 
-              {/* Items Breakdown */}
+              {/* Items Breakdown with Discount Details */}
               <div>
                 <div className="text-[11px] font-bold uppercase tracking-wider text-slate-700 mb-1.5 flex justify-between">
-                  <span>Items Summary ({breakdownMode === 'consolidated' ? 'Consolidated' : 'Per Order'})</span>
+                  <span className="flex items-center space-x-1.5">
+                    <span>Items Summary ({breakdownMode === 'consolidated' ? 'Consolidated' : 'Per Order'})</span>
+                    {totalDiscountInCents > 0 && (
+                      <span className="text-[10px] font-semibold text-rose-600 bg-rose-50 px-1.5 py-0.5 rounded border border-rose-200">
+                        Discounts Applied
+                      </span>
+                    )}
+                  </span>
                   <span className="text-slate-500 font-normal">{totalItemsCount} units</span>
                 </div>
                 {breakdownMode === 'consolidated' ? (
                   <table className="w-full border-collapse text-xs">
                     <thead>
                       <tr className="bg-slate-100 border-y border-slate-300 text-slate-700 text-[10px] uppercase">
-                        <th className="py-1 px-2 text-left font-bold">Product</th>
-                        <th className="py-1 px-2 text-center font-bold">Qty</th>
-                        <th className="py-1 px-2 text-right font-bold">Unit Price</th>
-                        <th className="py-1 px-2 text-right font-bold">Line Total</th>
+                        <th className="py-1.5 px-2 text-left font-bold" style={{ width: '38%' }}>Product</th>
+                        <th className="py-1.5 px-2 text-center font-bold" style={{ width: '10%' }}>Qty</th>
+                        <th className="py-1.5 px-2 text-right font-bold" style={{ width: '18%' }}>Unit Price</th>
+                        <th className="py-1.5 px-2 text-right font-bold" style={{ width: '16%' }}>Discount</th>
+                        <th className="py-1.5 px-2 text-right font-bold" style={{ width: '18%' }}>Line Total</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
-                      {consolidatedItems.map((item, idx) => (
-                        <tr key={idx} className="hover:bg-slate-50/60">
-                          <td className="py-1 px-2 font-semibold text-slate-900">{item.productName}</td>
-                          <td className="py-1 px-2 text-center font-mono">{item.quantity}</td>
-                          <td className="py-1 px-2 text-right font-mono text-slate-600">{formatCurrency(item.unitPriceInCents, currency)}</td>
-                          <td className="py-1 px-2 text-right font-mono font-bold text-slate-900">{formatCurrency(item.totalLineAmountInCents, currency)}</td>
-                        </tr>
-                      ))}
+                      {consolidatedItems.map((item, idx) => {
+                        const hasDiscount = (item.totalDiscountInCents || 0) > 0;
+                        const discountedUnitPrice = hasDiscount
+                          ? Math.round(item.totalLineAmountInCents / (item.quantity || 1))
+                          : item.unitPriceInCents;
+                        return (
+                          <tr key={idx} className="hover:bg-slate-50/60">
+                            <td className="py-2 px-2">
+                              <div className="font-semibold text-slate-900">{item.productName}</div>
+                              {hasDiscount && (
+                                <span className="inline-flex items-center space-x-1 text-[9.5px] font-bold text-rose-600 bg-rose-50 px-1.5 py-0.2 rounded border border-rose-200 mt-0.5">
+                                  <Tag className="w-2.5 h-2.5" />
+                                  <span>Save {formatCurrency(item.totalDiscountInCents, currency)}</span>
+                                </span>
+                              )}
+                            </td>
+                            <td className="py-2 px-2 text-center font-mono">{item.quantity}</td>
+                            <td className="py-2 px-2 text-right font-mono">
+                              {hasDiscount ? (
+                                <div>
+                                  <span className="font-bold text-slate-900">{formatCurrency(discountedUnitPrice, currency)}</span>
+                                  <span className="block text-[9.5px] text-slate-400 line-through">
+                                    {formatCurrency(item.unitPriceInCents, currency)}
+                                  </span>
+                                </div>
+                              ) : (
+                                <span className="text-slate-600">{formatCurrency(item.unitPriceInCents, currency)}</span>
+                              )}
+                            </td>
+                            <td className="py-2 px-2 text-right font-mono">
+                              {hasDiscount ? (
+                                <span className="font-bold text-rose-600">
+                                  -{formatCurrency(item.totalDiscountInCents, currency)}
+                                </span>
+                              ) : (
+                                <span className="text-slate-400">&mdash;</span>
+                              )}
+                            </td>
+                            <td className="py-2 px-2 text-right font-mono font-bold text-slate-900">
+                              <div>{formatCurrency(item.totalLineAmountInCents, currency)}</div>
+                              {hasDiscount && (
+                                <div className="text-[9.5px] text-slate-400 line-through font-normal">
+                                  {formatCurrency(item.totalOriginalAmountInCents, currency)}
+                                </div>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 ) : (
-                  <div className="space-y-2">
+                  <div className="space-y-3">
                     {filteredTransactions.map((txn) => (
                       <div key={txn._id} className="border border-slate-200 rounded-lg overflow-hidden">
-                        <div className="bg-slate-100 px-2 py-1 flex justify-between items-center text-[11px] font-bold">
+                        <div className="bg-slate-100 px-3 py-1.5 flex justify-between items-center text-[11px] font-bold">
                           <span>{txn.txnNumber}</span>
                           <span className="font-mono">{formatCurrency(txn.grandTotalInCents, currency)}</span>
                         </div>
-                        <div className="p-2 space-y-1">
-                          {(txn.items || []).map((item, idx) => (
-                            <div key={idx} className="flex justify-between text-[11px]">
-                              <span>{item.quantity}x {item.productNameSnapshot}</span>
-                              <span className="font-mono font-bold">{formatCurrency(item.finalLineTotalInCents, currency)}</span>
-                            </div>
-                          ))}
-                        </div>
+                        <table className="w-full border-collapse text-xs">
+                          <thead>
+                            <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 text-[9.5px] uppercase">
+                              <th className="py-1 px-2 text-left font-semibold">Item</th>
+                              <th className="py-1 px-2 text-center font-semibold">Qty</th>
+                              <th className="py-1 px-2 text-right font-semibold">Unit Price</th>
+                              <th className="py-1 px-2 text-right font-semibold">Discount</th>
+                              <th className="py-1 px-2 text-right font-semibold">Total</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100">
+                            {(txn.items || []).map((item, idx) => {
+                              const hasDisc = (item.lineDiscountInCents || 0) > 0;
+                              const discountedUnit = hasDisc
+                                ? Math.round((item.finalLineTotalInCents || 0) / (item.quantity || 1))
+                                : (item.unitPriceInCents || 0);
+                              return (
+                                <tr key={idx} className="hover:bg-slate-50/50">
+                                  <td className="py-1.5 px-2">{item.productNameSnapshot || 'Product'}</td>
+                                  <td className="py-1.5 px-2 text-center font-mono">{item.quantity || 1}</td>
+                                  <td className="py-1.5 px-2 text-right font-mono">
+                                    {hasDisc ? (
+                                      <div>
+                                        <span className="font-bold text-slate-900">{formatCurrency(discountedUnit, currency)}</span>
+                                        <span className="block text-[9px] text-slate-400 line-through">{formatCurrency(item.unitPriceInCents || 0, currency)}</span>
+                                      </div>
+                                    ) : (
+                                      <span>{formatCurrency(item.unitPriceInCents || 0, currency)}</span>
+                                    )}
+                                  </td>
+                                  <td className="py-1.5 px-2 text-right font-mono">
+                                    {hasDisc ? (
+                                      <span className="font-bold text-rose-600">-{formatCurrency(item.lineDiscountInCents, currency)}</span>
+                                    ) : (
+                                      <span className="text-slate-400">&mdash;</span>
+                                    )}
+                                  </td>
+                                  <td className="py-1.5 px-2 text-right font-mono font-bold text-slate-900">
+                                    {formatCurrency(item.finalLineTotalInCents || 0, currency)}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
                       </div>
                     ))}
                   </div>
                 )}
               </div>
 
-              {/* Summary Block */}
+              {/* Summary Block with Discount Savings Line */}
               <div className="flex justify-end">
-                <div className="w-64 bg-slate-50 border border-slate-300 rounded-lg p-3 space-y-1.5 text-xs">
+                <div className="w-72 bg-slate-50 border border-slate-300 rounded-lg p-3 space-y-1.5 text-xs">
                   <div className="flex justify-between">
                     <span className="text-slate-600">Total Orders:</span>
                     <strong>{filteredTransactions.length}</strong>
@@ -1049,6 +1237,12 @@ export default function PrintableCustomerBillModal({
                     <span className="text-slate-600">Total Units:</span>
                     <strong>{totalItemsCount}</strong>
                   </div>
+                  {totalDiscountInCents > 0 && (
+                    <div className="flex justify-between text-rose-600 font-semibold pt-1 border-t border-slate-200">
+                      <span>Total Savings / Discount:</span>
+                      <span className="font-mono">-{formatCurrency(totalDiscountInCents, currency)}</span>
+                    </div>
+                  )}
                   <div className="flex justify-between items-center pt-2 border-t-2 border-slate-900 font-black text-sm">
                     <span>BALANCE DUE:</span>
                     <span className="text-amber-600 font-mono">{formatCurrency(computedTotalDueInCents, currency)}</span>
@@ -1059,12 +1253,12 @@ export default function PrintableCustomerBillModal({
               {/* Signatures */}
               <div className="grid grid-cols-2 gap-8 pt-4 border-t border-dashed border-slate-300 text-xs">
                 <div>
-                  <p className="text-slate-600">Customer Signature:</p>
+                  <p className="text-slate-600 font-medium">Customer Signature:</p>
                   <div className="mt-6 border-t border-slate-900 pt-1 font-bold text-slate-900">{customerName}</div>
                   <p className="text-[10px] text-slate-500 italic mt-0.5">I acknowledge and agree to settle the balance shown above.</p>
                 </div>
                 <div>
-                  <p className="text-slate-600">Authorized Staff:</p>
+                  <p className="text-slate-600 font-medium">Authorized Staff:</p>
                   <div className="mt-6 border-t border-slate-900 pt-1 font-bold text-slate-900">{loggedInStaffName}</div>
                   <p className="text-[10px] text-slate-500 mt-0.5">Printed: {printDateStr}</p>
                 </div>
@@ -1076,7 +1270,7 @@ export default function PrintableCustomerBillModal({
             </div>
           ) : (
             /* 80mm Thermal Receipt Preview */
-            <div className="bg-white text-black p-6 rounded-2xl shadow-xl font-mono text-xs space-y-4 w-full max-w-[340px]">
+            <div className="bg-white text-black p-6 rounded-2xl shadow-xl font-mono text-xs space-y-4 w-full max-w-[340px] mb-10 shrink-0">
               {/* Header info */}
               <div className="text-center space-y-1">
                 <div className="text-base font-black uppercase tracking-wider">{companyName}</div>
@@ -1132,15 +1326,28 @@ export default function PrintableCustomerBillModal({
                     <span className="w-1/6 text-center">Qty</span>
                     <span className="w-1/3 text-right">Amount</span>
                   </div>
-                  {consolidatedItems.map((item, idx) => (
-                    <div key={idx} className="flex justify-between">
-                      <span className="w-1/2 truncate font-medium">{item.productName}</span>
-                      <span className="w-1/6 text-center">{item.quantity}</span>
-                      <span className="w-1/3 text-right font-bold">
-                        {formatCurrency(item.totalLineAmountInCents, currency)}
-                      </span>
-                    </div>
-                  ))}
+                  {consolidatedItems.map((item, idx) => {
+                    const hasDiscount = (item.totalDiscountInCents || 0) > 0;
+                    const discountedUnitPrice = hasDiscount
+                      ? Math.round(item.totalLineAmountInCents / (item.quantity || 1))
+                      : item.unitPriceInCents;
+                    return (
+                      <div key={idx} className="space-y-0.5">
+                        <div className="flex justify-between">
+                          <span className="w-1/2 truncate font-medium">{item.productName}</span>
+                          <span className="w-1/6 text-center">{item.quantity}</span>
+                          <span className="w-1/3 text-right font-bold">
+                            {formatCurrency(item.totalLineAmountInCents, currency)}
+                          </span>
+                        </div>
+                        {hasDiscount && (
+                          <div className="text-[10px] text-gray-600 pl-1">
+                            * Disc: -{formatCurrency(item.totalDiscountInCents, currency)} ({formatCurrency(discountedUnitPrice, currency)}/ea)
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               ) : (
                 <div className="space-y-3 border-b border-dashed border-gray-400 pb-3 text-[11px]">
@@ -1150,12 +1357,22 @@ export default function PrintableCustomerBillModal({
                         <span>{txn.txnNumber}</span>
                         <span>{formatCurrency(txn.grandTotalInCents, currency)}</span>
                       </div>
-                      {(txn.items || []).map((item, idx) => (
-                        <div key={idx} className="flex justify-between pl-1">
-                          <span className="truncate">{item.quantity}x {item.productNameSnapshot}</span>
-                          <span>{formatCurrency(item.finalLineTotalInCents, currency)}</span>
-                        </div>
-                      ))}
+                      {(txn.items || []).map((item, idx) => {
+                        const hasDisc = (item.lineDiscountInCents || 0) > 0;
+                        return (
+                          <div key={idx} className="space-y-0.5 pl-1">
+                            <div className="flex justify-between">
+                              <span className="truncate">{item.quantity}x {item.productNameSnapshot}</span>
+                              <span>{formatCurrency(item.finalLineTotalInCents, currency)}</span>
+                            </div>
+                            {hasDisc && (
+                              <div className="text-[9.5px] text-gray-600 pl-2">
+                                * Disc: -{formatCurrency(item.lineDiscountInCents, currency)}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
                     </div>
                   ))}
                 </div>
@@ -1167,6 +1384,12 @@ export default function PrintableCustomerBillModal({
                   <span>Total Items:</span>
                   <span className="font-bold">{totalItemsCount} items</span>
                 </div>
+                {totalDiscountInCents > 0 && (
+                  <div className="flex justify-between">
+                    <span>Total Savings:</span>
+                    <span className="font-bold">-{formatCurrency(totalDiscountInCents, currency)}</span>
+                  </div>
+                )}
                 <div className="flex justify-between text-base font-black pt-1.5 border-t-2 border-gray-800">
                   <span>TOTAL BALANCE DUE:</span>
                   <span>{formatCurrency(computedTotalDueInCents, currency)}</span>
@@ -1192,6 +1415,11 @@ export default function PrintableCustomerBillModal({
         <div className="p-4 sm:p-5 border-t border-slate-800 bg-slate-850 flex items-center justify-between gap-3 shrink-0">
           <div className="text-xs text-slate-400 font-mono">
             Balance Due: <strong className="text-amber-400 text-base">{formatCurrency(computedTotalDueInCents, currency)}</strong>
+            {totalDiscountInCents > 0 && (
+              <span className="ml-2 text-rose-400 font-normal">
+                (Savings: -{formatCurrency(totalDiscountInCents, currency)})
+              </span>
+            )}
           </div>
 
           <div className="flex items-center space-x-3">
