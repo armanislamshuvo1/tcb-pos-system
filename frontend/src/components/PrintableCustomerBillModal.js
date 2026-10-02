@@ -90,10 +90,67 @@ export default function PrintableCustomerBillModal({
     );
   }, [filteredTransactions]);
 
-  if (!isOpen) return null;
-
   const handlePrint = () => {
-    window.print();
+    const printElement = document.getElementById('printable-customer-statement');
+    if (!printElement) {
+      window.print();
+      return;
+    }
+
+    const iframe = document.createElement('iframe');
+    iframe.style.position = 'fixed';
+    iframe.style.right = '0';
+    iframe.style.bottom = '0';
+    iframe.style.width = '0';
+    iframe.style.height = '0';
+    iframe.style.border = '0';
+    document.body.appendChild(iframe);
+
+    const doc = iframe.contentWindow.document;
+    doc.open();
+    doc.write(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Customer Bill - ${customerName || 'Statement'}</title>
+          <style>
+            @page {
+              size: ${printFormat === '80mm' ? '80mm auto' : 'auto'};
+              margin: ${printFormat === '80mm' ? '0' : '8mm'};
+            }
+            * {
+              box-sizing: border-box;
+              margin: 0;
+              padding: 0;
+            }
+            body {
+              font-family: monospace;
+              font-size: ${printFormat === '80mm' ? '11px' : '13px'};
+              line-height: 1.25;
+              color: #000;
+              background: #fff;
+              padding: ${printFormat === '80mm' ? '4mm' : '10mm'};
+              width: ${printFormat === '80mm' ? '80mm' : '100%'};
+              max-width: ${printFormat === '80mm' ? '80mm' : '100%'};
+            }
+          </style>
+        </head>
+        <body>
+          ${printElement.innerHTML}
+        </body>
+      </html>
+    `);
+    doc.close();
+
+    iframe.contentWindow.focus();
+    setTimeout(() => {
+      iframe.contentWindow.print();
+      setTimeout(() => {
+        if (document.body.contains(iframe)) {
+          document.body.removeChild(iframe);
+        }
+      }, 1000);
+    }, 200);
   };
 
   const companyName = company?.branding?.displayName || company?.name || 'PoS System';
@@ -105,6 +162,8 @@ export default function PrintableCustomerBillModal({
     day: 'numeric'
   });
   const printTimeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+  if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-[70] bg-black/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-6 overflow-y-auto animate-in fade-in duration-200">

@@ -88,7 +88,69 @@ export default function TransactionDetailModal({ txn, onClose, onTxnUpdated }) {
   };
 
   const handlePrint = () => {
-    window.print();
+    const printElement = document.getElementById('printable-txn-detail');
+    if (!printElement) {
+      window.print();
+      return;
+    }
+
+    const iframe = document.createElement('iframe');
+    iframe.style.position = 'fixed';
+    iframe.style.right = '0';
+    iframe.style.bottom = '0';
+    iframe.style.width = '0';
+    iframe.style.height = '0';
+    iframe.style.border = '0';
+    document.body.appendChild(iframe);
+
+    const doc = iframe.contentWindow.document;
+    doc.open();
+    doc.write(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Receipt - ${currentTxn.txnNumber}</title>
+          <style>
+            @page {
+              size: 80mm auto;
+              margin: 0;
+            }
+            * {
+              box-sizing: border-box;
+              margin: 0;
+              padding: 0;
+            }
+            body {
+              font-family: monospace;
+              font-size: 11px;
+              line-height: 1.25;
+              color: #000;
+              background: #fff;
+              padding: 4mm;
+              width: 80mm;
+              max-width: 80mm;
+            }
+            button, .print\\:hidden {
+              display: none !important;
+            }
+          </style>
+        </head>
+        <body>
+          ${printElement.innerHTML}
+        </body>
+      </html>
+    `);
+    doc.close();
+
+    iframe.contentWindow.focus();
+    setTimeout(() => {
+      iframe.contentWindow.print();
+      setTimeout(() => {
+        if (document.body.contains(iframe)) {
+          document.body.removeChild(iframe);
+        }
+      }, 1000);
+    }, 200);
   };
 
   // Determine Customer / Room / Staff type
