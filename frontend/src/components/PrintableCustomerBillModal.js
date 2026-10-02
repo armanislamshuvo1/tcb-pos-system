@@ -52,35 +52,53 @@ export default function PrintableCustomerBillModal({
   }, [transactions, filterMode]);
 
   // Aggregate items across all filtered transactions for consolidated view with discount tracking
+  // Aggregate items across all filtered transactions for consolidated view.
+  // Group by (productId + origUnitPrice + effectiveUnitPrice) so undiscounted transactions
+  // and discounted transactions show as separate rows with their actual pricing (no artificial price averaging).
   const consolidatedItems = useMemo(() => {
     const map = new Map();
     filteredTransactions.forEach((txn) => {
       (txn.items || []).forEach((item) => {
         const prodId = item.productId?.toString() || item.productNameSnapshot;
-        if (!map.has(prodId)) {
-          map.set(prodId, {
+        const qty = item.quantity || 1;
+        const origUnitPrice = item.unitPriceInCents || 0;
+        const discountInCents = item.lineDiscountInCents || 0;
+        const finalLineTotal =
+          item.finalLineTotalInCents ?? (origUnitPrice * qty - discountInCents);
+        const originalLineTotal = origUnitPrice * qty;
+        const effectiveUnitPrice = Math.round(finalLineTotal / qty);
+        const effectiveDiscountPerUnit = Math.round(discountInCents / qty);
+
+        const groupKey = `${prodId}_${origUnitPrice}_${effectiveUnitPrice}`;
+
+        if (!map.has(groupKey)) {
+          map.set(groupKey, {
+            groupKey,
             productId: prodId,
             productName: item.productNameSnapshot || 'Product',
-            unitPriceInCents: item.unitPriceInCents || 0,
+            unitPriceInCents: origUnitPrice,
+            effectiveUnitPriceInCents: effectiveUnitPrice,
+            effectiveDiscountPerUnitInCents: effectiveDiscountPerUnit,
+            hasDiscount: discountInCents > 0,
             quantity: 0,
             totalLineAmountInCents: 0,
             totalDiscountInCents: 0,
             totalOriginalAmountInCents: 0
           });
         }
-        const existing = map.get(prodId);
-        const qty = item.quantity || 1;
-        const discountInCents = item.lineDiscountInCents || 0;
-        const finalLineTotal = item.finalLineTotalInCents ?? ((item.unitPriceInCents || 0) * qty - discountInCents);
-        const originalLineTotal = (item.unitPriceInCents || 0) * qty;
-
+        const existing = map.get(groupKey);
         existing.quantity += qty;
         existing.totalLineAmountInCents += finalLineTotal;
         existing.totalDiscountInCents += discountInCents;
         existing.totalOriginalAmountInCents += originalLineTotal;
       });
     });
-    return Array.from(map.values()).sort((a, b) => b.totalLineAmountInCents - a.totalLineAmountInCents);
+
+    return Array.from(map.values()).sort((a, b) => {
+      const nameComp = a.productName.localeCompare(b.productName);
+      if (nameComp !== 0) return nameComp;
+      return b.effectiveUnitPriceInCents - a.effectiveUnitPriceInCents;
+    });
   }, [filteredTransactions]);
 
   const computedTotalDueInCents = useMemo(() => {
@@ -151,20 +169,21 @@ export default function PrintableCustomerBillModal({
           <tbody>
             ${consolidatedItems
               .map((item) => {
-                const hasDiscount = (item.totalDiscountInCents || 0) > 0;
-                const discountedUnitPrice = hasDiscount
-                  ? Math.round(item.totalLineAmountInCents / (item.quantity || 1))
-                  : item.unitPriceInCents;
+                const hasDiscount = item.hasDiscount || (item.totalDiscountInCents || 0) > 0;
                 return `
                 <tr>
                   <td>
                     <div class="font-bold">${item.productName}</div>
-                    ${hasDiscount ? `<div style="font-size: 8.5px; color: #dc2626; font-weight: 600;">Save ${formatCurrency(item.totalDiscountInCents, currency)}</div>` : ''}
+                    ${hasDiscount ? `
+                      <div style="font-size: 8.5px; color: #dc2626; font-weight: 600;">
+                        Promo (-${formatCurrency(item.effectiveDiscountPerUnitInCents, currency)}/ea) &bull; Save ${formatCurrency(item.totalDiscountInCents, currency)}
+                      </div>
+                    ` : ''}
                   </td>
                   <td class="text-center font-mono">${item.quantity}</td>
                   <td class="text-right font-mono">
                     ${hasDiscount ? `
-                      <div><strong>${formatCurrency(discountedUnitPrice, currency)}</strong></div>
+                      <div><strong>${formatCurrency(item.effectiveUnitPriceInCents, currency)}</strong></div>
                       <div style="font-size: 8.5px; color: #94a3b8; text-decoration: line-through;">${formatCurrency(item.unitPriceInCents, currency)}</div>
                     ` : `
                       <span>${formatCurrency(item.unitPriceInCents, currency)}</span>
@@ -695,21 +714,18 @@ export default function PrintableCustomerBillModal({
               </div>
               ${consolidatedItems
                 .map((item) => {
-                  const hasDiscount = (item.totalDiscountInCents || 0) > 0;
-                  const discountedUnitPrice = hasDiscount
-                    ? Math.round(item.totalLineAmountInCents / (item.quantity || 1))
-                    : item.unitPriceInCents;
+                  const hasDiscount = item.hasDiscount || (item.totalDiscountInCents || 0) > 0;
                   return `
                   <div style="margin: 2px 0;">
                     <div class="flex-between">
                       <span style="width: 44%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${item.productName}</span>
                       <span style="width: 14%; text-align: center;">${item.quantity}</span>
-                      <span style="width: 22%; text-align: right;">${formatCurrency(hasDiscount ? discountedUnitPrice : item.unitPriceInCents, currency)}</span>
+                      <span style="width: 22%; text-align: right;">${formatCurrency(hasDiscount ? item.effectiveUnitPriceInCents : item.unitPriceInCents, currency)}</span>
                       <span style="width: 20%; text-align: right; font-weight: bold;">${formatCurrency(item.totalLineAmountInCents, currency)}</span>
                     </div>
                     ${hasDiscount ? `
                       <div style="font-size: 9.5px; color: #444; padding-left: 2px;">
-                        * Disc: -${formatCurrency(item.totalDiscountInCents, currency)} (Orig: ${formatCurrency(item.unitPriceInCents, currency)})
+                        * Disc: -${formatCurrency(item.totalDiscountInCents, currency)} (Orig: ${formatCurrency(item.unitPriceInCents, currency)}/ea)
                       </div>
                     ` : ''}
                   </div>
@@ -1117,10 +1133,7 @@ export default function PrintableCustomerBillModal({
                     </thead>
                     <tbody className="divide-y divide-slate-100">
                       {consolidatedItems.map((item, idx) => {
-                        const hasDiscount = (item.totalDiscountInCents || 0) > 0;
-                        const discountedUnitPrice = hasDiscount
-                          ? Math.round(item.totalLineAmountInCents / (item.quantity || 1))
-                          : item.unitPriceInCents;
+                        const hasDiscount = item.hasDiscount || (item.totalDiscountInCents || 0) > 0;
                         return (
                           <tr key={idx} className="hover:bg-slate-50/60">
                             <td className="py-2 px-2">
@@ -1128,7 +1141,7 @@ export default function PrintableCustomerBillModal({
                               {hasDiscount && (
                                 <span className="inline-flex items-center space-x-1 text-[9.5px] font-bold text-rose-600 bg-rose-50 px-1.5 py-0.2 rounded border border-rose-200 mt-0.5">
                                   <Tag className="w-2.5 h-2.5" />
-                                  <span>Save {formatCurrency(item.totalDiscountInCents, currency)}</span>
+                                  <span>Save {formatCurrency(item.totalDiscountInCents, currency)} (-{formatCurrency(item.effectiveDiscountPerUnitInCents, currency)}/ea)</span>
                                 </span>
                               )}
                             </td>
@@ -1136,7 +1149,7 @@ export default function PrintableCustomerBillModal({
                             <td className="py-2 px-2 text-right font-mono">
                               {hasDiscount ? (
                                 <div>
-                                  <span className="font-bold text-slate-900">{formatCurrency(discountedUnitPrice, currency)}</span>
+                                  <span className="font-bold text-slate-900">{formatCurrency(item.effectiveUnitPriceInCents, currency)}</span>
                                   <span className="block text-[9.5px] text-slate-400 line-through">
                                     {formatCurrency(item.unitPriceInCents, currency)}
                                   </span>
