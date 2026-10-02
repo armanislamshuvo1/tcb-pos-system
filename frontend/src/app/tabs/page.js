@@ -33,10 +33,15 @@ import {
   BedDouble,
   UserCheck,
   Building,
-  RotateCcw
+  RotateCcw,
+  Printer,
+  Eye,
+  ExternalLink
 } from 'lucide-react';
 import { ROOM_WINGS, isDormRoom, getRoomByNumber } from '../../utils/rooms';
 import RevertSettlementModal from '../../components/RevertSettlementModal';
+import TransactionDetailModal from '../../components/TransactionDetailModal';
+import PrintableCustomerBillModal from '../../components/PrintableCustomerBillModal';
 
 export default function StaffTabsPage() {
   const axiosSecure = useAxiosSecure();
@@ -98,6 +103,14 @@ export default function StaffTabsPage() {
   const [expandedSettledBillIds, setExpandedSettledBillIds] = useState({});
   const [revertModalTxn, setRevertModalTxn] = useState(null);
   const [showRevertModal, setShowRevertModal] = useState(false);
+
+  // Transaction Detail Modal State (Pic 1 & Pic 2)
+  const [selectedDetailTxn, setSelectedDetailTxn] = useState(null);
+  const [detailTxnLoading, setDetailTxnLoading] = useState(false);
+
+  // Printable Customer Bill Modal State (Customer Statements & Batch Prints)
+  const [printCustomerBillData, setPrintCustomerBillData] = useState(null);
+  const [printCustomerBillLoading, setPrintCustomerBillLoading] = useState(false);
 
   const [feedback, setFeedback] = useState(null);
 
@@ -229,6 +242,70 @@ export default function StaffTabsPage() {
 
   const refreshAllTabsData = async () => {
     await queryClient.invalidateQueries({ queryKey: queryKeys.tabs.all });
+  };
+
+  // Open Transaction Details Modal (from complete txn object or by fetching ID)
+  const handleViewTxnDetails = async (txnOrId) => {
+    if (!txnOrId) return;
+    if (typeof txnOrId === 'object' && txnOrId._id) {
+      setSelectedDetailTxn(txnOrId);
+      return;
+    }
+    try {
+      setDetailTxnLoading(true);
+      const res = await axiosSecure.get(`/api/transactions/${txnOrId}`);
+      if (res.data?.success) {
+        setSelectedDetailTxn(res.data.data);
+      }
+    } catch (err) {
+      console.error('Error fetching transaction details:', err);
+      setFeedback({
+        type: 'error',
+        message: err.response?.data?.message || 'Failed to fetch transaction details'
+      });
+    } finally {
+      setDetailTxnLoading(false);
+    }
+  };
+
+  // Open Printable Customer Bill Statement Modal
+  const handleOpenPrintCustomerBill = async (customerNameOrTab, selectedTxns = null) => {
+    const customerName = typeof customerNameOrTab === 'string'
+      ? customerNameOrTab
+      : customerNameOrTab?.customerName;
+    if (!customerName) return;
+
+    if (Array.isArray(selectedTxns) && selectedTxns.length > 0) {
+      setPrintCustomerBillData({
+        customerName,
+        transactions: selectedTxns,
+        totalBalanceInCents: selectedTxns.reduce((acc, t) => acc + (t.grandTotalInCents || 0), 0),
+        initialFilter: 'UNPAID'
+      });
+      return;
+    }
+
+    try {
+      setPrintCustomerBillLoading(true);
+      const res = await axiosSecure.get(`/api/tabs/customers/${encodeURIComponent(customerName)}/transactions?status=all`);
+      if (res.data?.success) {
+        const txns = res.data.data.transactions || [];
+        setPrintCustomerBillData({
+          customerName,
+          transactions: txns,
+          totalBalanceInCents: res.data.data.totalBalanceInCents || 0,
+          initialFilter: 'UNPAID'
+        });
+      }
+    } catch (err) {
+      console.error('Error fetching customer transactions for print:', err);
+      setFeedback({
+        type: 'error',
+        message: err.response?.data?.message || 'Failed to prepare customer bill for printing'
+      });
+    } finally {
+      setPrintCustomerBillLoading(false);
+    }
   };
 
   const handleOpenSettleForBill = (bill) => {
@@ -843,9 +920,18 @@ export default function StaffTabsPage() {
                               <h2 className="text-base sm:text-lg font-extrabold text-white">
                                 {holderTitle}
                               </h2>
-                              <span className="px-2 py-0.5 rounded-md font-mono text-xs font-semibold bg-slate-950 text-slate-400 border border-slate-800">
-                                {bill.txnNumber}
-                              </span>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleViewTxnDetails(bill);
+                                }}
+                                className="px-2.5 py-0.5 rounded-md font-mono text-xs font-bold bg-amber-500/10 hover:bg-amber-500/25 text-amber-400 hover:text-amber-300 border border-amber-500/30 transition flex items-center space-x-1 cursor-pointer"
+                                title="Click to audit and view full transaction details"
+                              >
+                                <span>{bill.txnNumber}</span>
+                                <Eye className="w-3 h-3 text-amber-400" />
+                              </button>
                             </div>
 
                             <div className="text-xs text-slate-400 mt-1 flex items-center space-x-3 flex-wrap gap-y-1">
@@ -858,13 +944,26 @@ export default function StaffTabsPage() {
                           </div>
                         </div>
 
-                        <div className="flex items-center space-x-4">
+                        <div className="flex items-center space-x-3">
                           <div className="text-right">
                             <div className="text-xs text-slate-400 font-medium">Balance Due</div>
                             <div className="text-lg sm:text-xl font-black text-amber-400 font-mono">
                               {formatCurrency(bill.grandTotalInCents, currency)}
                             </div>
                           </div>
+
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleViewTxnDetails(bill);
+                            }}
+                            className="px-3.5 py-2.5 bg-slate-800 hover:bg-slate-750 text-slate-200 hover:text-amber-400 active:scale-95 font-bold text-xs sm:text-sm rounded-xl border border-slate-700 hover:border-amber-500/30 transition flex items-center space-x-1.5 cursor-pointer shadow-sm"
+                            title="Audit transaction and view full ticket details"
+                          >
+                            <Eye className="w-4 h-4" />
+                            <span>Audit Txn</span>
+                          </button>
 
                           <button
                             type="button"
@@ -891,7 +990,8 @@ export default function StaffTabsPage() {
                                   <th className="pb-3 px-3">Unit Price</th>
                                   <th className="pb-3 px-3 text-center">Qty on Hold</th>
                                   <th className="pb-3 px-3 text-right">Discounts</th>
-                                  <th className="pb-3 pr-2 text-right">Subtotal</th>
+                                  <th className="pb-3 px-3 text-right">Subtotal</th>
+                                  <th className="pb-3 pr-2 text-right">Time</th>
                                 </tr>
                               </thead>
                               <tbody className="divide-y divide-slate-800/50 text-slate-300">
@@ -914,8 +1014,11 @@ export default function StaffTabsPage() {
                                     <td className="py-3 px-3 text-right text-xs sm:text-sm font-mono text-emerald-400">
                                       {item.lineDiscountInCents > 0 ? `-${formatCurrency(item.lineDiscountInCents, currency)}` : '—'}
                                     </td>
-                                    <td className="py-3 pr-2 text-right font-bold text-white font-mono text-xs sm:text-sm">
+                                    <td className="py-3 px-3 text-right font-bold text-white font-mono text-xs sm:text-sm">
                                       {formatCurrency(item.finalLineTotalInCents, currency)}
+                                    </td>
+                                    <td className="py-3 pr-2 text-right text-xs text-slate-400 font-mono">
+                                      {new Date(item.takenAt || bill.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                                     </td>
                                   </tr>
                                 ))}
@@ -929,6 +1032,28 @@ export default function StaffTabsPage() {
                               <span>{bill.notes}</span>
                             </div>
                           )}
+
+                          {/* Audit & Transaction Action Footer Bar */}
+                          <div className="pt-3 border-t border-slate-800/80 flex items-center justify-between flex-wrap gap-3">
+                            <div className="text-xs text-slate-400 flex items-center space-x-3 flex-wrap">
+                              <span>Cashier: <strong className="text-white">{bill.cashierNameSnapshot}</strong></span>
+                              <span>•</span>
+                              <span>Timestamp: <strong className="text-slate-300">{dateStr} at {timeStr}</strong></span>
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-blue-500/10 text-blue-400 border border-blue-500/30">
+                                Status: {bill.status}
+                              </span>
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={() => handleViewTxnDetails(bill)}
+                              className="px-3.5 py-2 bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 hover:text-amber-200 border border-amber-500/30 rounded-xl text-xs font-bold transition flex items-center space-x-1.5 cursor-pointer active:scale-95 shadow-sm"
+                              title="Audit full transaction, print ticket, inspect discounts and line items"
+                            >
+                              <Eye className="w-4 h-4 text-amber-400" />
+                              <span>Audit & View Details</span>
+                            </button>
+                          </div>
                         </div>
                       )}
                     </div>
@@ -1032,13 +1157,26 @@ export default function StaffTabsPage() {
                           </div>
                         </div>
 
-                        <div className="flex items-center space-x-4">
+                        <div className="flex items-center space-x-3">
                           <div className="text-right">
                             <div className="text-xs text-slate-400 font-medium">Balance Due</div>
                             <div className="text-lg sm:text-xl font-black text-amber-400 font-mono">
                               {formatCurrency(tab.totalOwedInCents, currency)}
                             </div>
                           </div>
+
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleOpenPrintCustomerBill(tab);
+                            }}
+                            className="px-3.5 py-2.5 bg-slate-800 hover:bg-slate-750 text-slate-200 hover:text-amber-400 active:scale-95 font-bold text-xs sm:text-sm rounded-xl border border-slate-700 hover:border-amber-500/30 transition flex items-center space-x-1.5 cursor-pointer shadow-sm"
+                            title="Print all bills / customer statement"
+                          >
+                            <Printer className="w-4 h-4" />
+                            <span className="hidden sm:inline">Print Bill</span>
+                          </button>
 
                           <button
                             type="button"
@@ -1134,11 +1272,14 @@ export default function StaffTabsPage() {
                                                 {item.history.map((occ, oIdx) => (
                                                   <div
                                                     key={occ.transactionId + '_' + oIdx}
-                                                    className="p-2.5 bg-slate-850 rounded-xl border border-slate-800 space-y-1"
+                                                    onClick={() => handleViewTxnDetails(occ.transactionId)}
+                                                    className="p-2.5 bg-slate-850 hover:bg-slate-800 rounded-xl border border-slate-800 hover:border-amber-500/50 space-y-1 cursor-pointer transition select-none group"
+                                                    title="Click to view full transaction details"
                                                   >
                                                     <div className="flex justify-between items-center">
-                                                      <span className="font-mono font-bold text-amber-400 text-[11px]">
-                                                        {occ.txnNumber}
+                                                      <span className="font-mono font-bold text-amber-400 text-[11px] group-hover:text-amber-300 flex items-center space-x-1">
+                                                        <span>{occ.txnNumber}</span>
+                                                        <Eye className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity text-amber-400" />
                                                       </span>
                                                       <span className="text-[10px] text-slate-400">
                                                         Qty: <strong className="text-white">{occ.quantity}</strong>
@@ -1147,8 +1288,9 @@ export default function StaffTabsPage() {
                                                     <div className="text-[10px] text-slate-400">
                                                       {new Date(occ.takenAt).toLocaleDateString()} {new Date(occ.takenAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                                                     </div>
-                                                    <div className="text-[10px] text-slate-500">
-                                                      Cashier: <span className="text-slate-300">{occ.cashierName || 'POS Staff'}</span>
+                                                    <div className="text-[10px] text-slate-500 flex justify-between items-center">
+                                                      <span>Cashier: <span className="text-slate-300">{occ.cashierName || 'POS Staff'}</span></span>
+                                                      <span className="text-[9px] text-amber-400/80 font-medium group-hover:underline">View Details &rarr;</span>
                                                     </div>
                                                   </div>
                                                 ))}
@@ -1296,17 +1438,22 @@ export default function StaffTabsPage() {
                                         const timeStr = dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
                                         return (
-                                          <div
+                                           <div
                                             key={hIdx}
-                                            className="flex items-center justify-between py-1 border-b border-slate-800/60 last:border-0"
+                                            onClick={() => handleViewTxnDetails(hist.transactionId)}
+                                            className="flex items-center justify-between py-1.5 px-2 rounded-lg border-b border-slate-800/60 last:border-0 hover:bg-slate-900 hover:text-white cursor-pointer transition select-none group"
+                                            title="Click to view full transaction details"
                                           >
                                             <span className="flex items-center space-x-2">
-                                              <span className="font-mono text-amber-400">{hist.txnNumber}</span>
+                                              <span className="font-mono text-amber-400 font-bold group-hover:underline flex items-center space-x-1">
+                                                <span>{hist.txnNumber}</span>
+                                                <Eye className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity" />
+                                              </span>
                                               <span className="text-slate-400">•</span>
                                               <span>{dateStr} at {timeStr}</span>
                                               <span className="text-slate-400">({hist.quantity}x)</span>
                                             </span>
-                                            <span className="text-slate-400">
+                                            <span className="text-slate-400 text-[11px]">
                                               Cashier: <strong>{hist.cashierName}</strong>
                                             </span>
                                           </div>
@@ -1558,12 +1705,17 @@ export default function StaffTabsPage() {
                                         const timeStr = dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
                                         return (
-                                          <div
+                                           <div
                                             key={oIdx}
-                                            className="flex flex-col sm:flex-row sm:items-center justify-between py-1.5 border-b border-slate-850 last:border-0 gap-1"
+                                            onClick={() => handleViewTxnDetails(occ.transactionId)}
+                                            className="flex flex-col sm:flex-row sm:items-center justify-between py-1.5 px-2 rounded-lg border-b border-slate-850 last:border-0 gap-1 hover:bg-slate-900 cursor-pointer transition select-none group"
+                                            title="Click to view full transaction details"
                                           >
                                             <div className="flex items-center space-x-2 flex-wrap">
-                                              <span className="font-mono text-amber-400 font-bold">{occ.txnNumber}</span>
+                                              <span className="font-mono text-amber-400 font-bold group-hover:underline flex items-center space-x-1">
+                                                <span>{occ.txnNumber}</span>
+                                                <Eye className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity" />
+                                              </span>
                                               <span className="text-slate-500">•</span>
                                               <span>{dateStr} at {timeStr}</span>
                                               <span className="text-emerald-400 font-bold font-mono">({occ.quantity}x)</span>
@@ -1835,10 +1987,15 @@ export default function StaffTabsPage() {
                                         return (
                                           <div
                                             key={oIdx}
-                                            className="flex items-center justify-between py-1 border-b border-slate-800/60 last:border-0"
+                                            onClick={() => handleViewTxnDetails(occ.transactionId || occ.txnNumber)}
+                                            className="flex items-center justify-between py-1.5 px-2 rounded-lg border-b border-slate-800/60 last:border-0 hover:bg-slate-900 cursor-pointer transition select-none group"
+                                            title="Click to view full transaction details"
                                           >
                                             <span className="flex items-center space-x-2">
-                                              <span className="font-mono text-amber-400 font-semibold">{occ.txnNumber}</span>
+                                              <span className="font-mono text-amber-400 font-bold group-hover:underline flex items-center space-x-1">
+                                                <span>{occ.txnNumber}</span>
+                                                <Eye className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity" />
+                                              </span>
                                               <span className="text-slate-400">•</span>
                                               <span>{dateStr} at {timeStr}</span>
                                               <span className="text-amber-300 font-bold font-mono">({occ.quantity}x on hold)</span>
@@ -2048,7 +2205,7 @@ export default function StaffTabsPage() {
                     <div
                       key={txn._id}
                       onClick={() => handleToggleTxnSelect(txn._id)}
-                      className={`p-3 rounded-xl border flex items-center justify-between cursor-pointer transition select-none ${
+                      className={`p-3 rounded-xl border flex items-center justify-between cursor-pointer transition select-none group ${
                         isSelected
                           ? 'bg-slate-800/90 border-amber-500/80 text-white'
                           : 'bg-slate-900 border-slate-800 text-slate-400 hover:bg-slate-850'
@@ -2058,19 +2215,42 @@ export default function StaffTabsPage() {
                         <input
                           type="checkbox"
                           checked={isSelected}
-                          onChange={() => {}} // Handled by container click
-                          className="w-4 h-4 rounded text-amber-500 focus:ring-amber-500 bg-slate-900 border-slate-700"
+                          onChange={() => {}}
+                          className="w-4 h-4 rounded text-amber-500 focus:ring-amber-500 bg-slate-900 border-slate-700 pointer-events-none"
                         />
                         <div>
-                          <div className="font-mono font-bold text-amber-400 text-sm">{txn.txnNumber}</div>
+                          <div
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleViewTxnDetails(txn);
+                            }}
+                            className="font-mono font-bold text-amber-400 text-sm hover:underline hover:text-amber-300 inline-flex items-center space-x-1 cursor-pointer"
+                            title="Click to view full transaction details"
+                          >
+                            <span>{txn.txnNumber}</span>
+                            <Eye className="w-3.5 h-3.5 opacity-60 group-hover:opacity-100 transition-opacity" />
+                          </div>
                           <div className="text-xs text-slate-400">
                             {dateStr} {timeStr} • {txn.items?.length || 0} items
                           </div>
                         </div>
                       </div>
 
-                      <div className="font-mono font-bold text-sm">
-                        {formatCurrency(txn.grandTotalInCents, currency)}
+                      <div className="flex items-center space-x-3">
+                        <div className="font-mono font-bold text-sm">
+                          {formatCurrency(txn.grandTotalInCents, currency)}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleViewTxnDetails(txn);
+                          }}
+                          className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-amber-400 border border-slate-700 hover:border-amber-500/40 transition cursor-pointer"
+                          title="View Transaction Details"
+                        >
+                          <Eye className="w-4 h-4" />
+                        </button>
                       </div>
                     </div>
                   );
@@ -2176,7 +2356,7 @@ export default function StaffTabsPage() {
                     <div
                       key={txn._id}
                       onClick={() => handleToggleRoomTxnSelect(txn._id)}
-                      className={`p-3 rounded-xl border flex items-center justify-between cursor-pointer transition select-none ${
+                      className={`p-3 rounded-xl border flex items-center justify-between cursor-pointer transition select-none group ${
                         isSelected
                           ? 'bg-slate-800/90 border-amber-500/80 text-white'
                           : 'bg-slate-900 border-slate-800 text-slate-400 hover:bg-slate-850'
@@ -2190,7 +2370,17 @@ export default function StaffTabsPage() {
                           className="w-4 h-4 rounded text-amber-500 focus:ring-amber-500 bg-slate-900 border-slate-700 pointer-events-none"
                         />
                         <div>
-                          <div className="font-mono font-bold text-amber-400 text-sm">{txn.txnNumber}</div>
+                          <div
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleViewTxnDetails(txn);
+                            }}
+                            className="font-mono font-bold text-amber-400 text-sm hover:underline hover:text-amber-300 inline-flex items-center space-x-1 cursor-pointer"
+                            title="Click to view full transaction details"
+                          >
+                            <span>{txn.txnNumber}</span>
+                            <Eye className="w-3.5 h-3.5 opacity-60 group-hover:opacity-100 transition-opacity" />
+                          </div>
                           <div className="text-xs text-slate-400">
                             {dateStr} {timeStr} • {txn.items?.length || 0} items
                             {txn.notes && <span className="ml-1 text-slate-500 italic">• &ldquo;{txn.notes}&rdquo;</span>}
@@ -2198,8 +2388,21 @@ export default function StaffTabsPage() {
                         </div>
                       </div>
 
-                      <div className="font-mono font-bold text-sm">
-                        {formatCurrency(txn.grandTotalInCents, currency)}
+                      <div className="flex items-center space-x-3">
+                        <div className="font-mono font-bold text-sm">
+                          {formatCurrency(txn.grandTotalInCents, currency)}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleViewTxnDetails(txn);
+                          }}
+                          className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-amber-400 border border-slate-700 hover:border-amber-500/40 transition cursor-pointer"
+                          title="View Transaction Details"
+                        >
+                          <Eye className="w-4 h-4" />
+                        </button>
                       </div>
                     </div>
                   );
@@ -2305,7 +2508,7 @@ export default function StaffTabsPage() {
                     <div
                       key={txn._id}
                       onClick={() => handleToggleCustomerTxnSelect(txn._id)}
-                      className={`p-3 rounded-xl border flex items-center justify-between cursor-pointer transition select-none ${
+                      className={`p-3 rounded-xl border flex items-center justify-between cursor-pointer transition select-none group ${
                         isSelected
                           ? 'bg-slate-800/90 border-amber-500/80 text-white'
                           : 'bg-slate-900 border-slate-800 text-slate-400 hover:bg-slate-850'
@@ -2319,7 +2522,17 @@ export default function StaffTabsPage() {
                           className="w-4 h-4 rounded text-amber-500 focus:ring-amber-500 bg-slate-900 border-slate-700 pointer-events-none"
                         />
                         <div>
-                          <div className="font-mono font-bold text-amber-400 text-sm">{txn.txnNumber}</div>
+                          <div
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleViewTxnDetails(txn);
+                            }}
+                            className="font-mono font-bold text-amber-400 text-sm hover:underline hover:text-amber-300 inline-flex items-center space-x-1 cursor-pointer"
+                            title="Click to view full transaction details"
+                          >
+                            <span>{txn.txnNumber}</span>
+                            <Eye className="w-3.5 h-3.5 opacity-60 group-hover:opacity-100 transition-opacity" />
+                          </div>
                           <div className="text-xs text-slate-400">
                             {dateStr} {timeStr} • {txn.items?.length || 0} items
                             {txn.notes && <span className="ml-1 text-slate-500 italic">• &ldquo;{txn.notes}&rdquo;</span>}
@@ -2327,8 +2540,21 @@ export default function StaffTabsPage() {
                         </div>
                       </div>
 
-                      <div className="font-mono font-bold text-sm">
-                        {formatCurrency(txn.grandTotalInCents, currency)}
+                      <div className="flex items-center space-x-3">
+                        <div className="font-mono font-bold text-sm">
+                          {formatCurrency(txn.grandTotalInCents, currency)}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleViewTxnDetails(txn);
+                          }}
+                          className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-amber-400 border border-slate-700 hover:border-amber-500/40 transition cursor-pointer"
+                          title="View Transaction Details"
+                        >
+                          <Eye className="w-4 h-4" />
+                        </button>
                       </div>
                     </div>
                   );
@@ -2366,6 +2592,22 @@ export default function StaffTabsPage() {
                 </div>
 
                 <div className="flex items-center space-x-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const selectedTxns = customerTransactions.filter((t) => selectedCustomerTxnIds.includes(t._id));
+                      handleOpenPrintCustomerBill(
+                        settleModalCustomer.customerName,
+                        selectedTxns.length > 0 ? selectedTxns : customerTransactions
+                      );
+                    }}
+                    className="px-3.5 py-2.5 rounded-xl text-xs font-bold bg-slate-800 hover:bg-slate-750 text-slate-200 hover:text-amber-400 border border-slate-700 hover:border-amber-500/40 transition flex items-center space-x-1.5 cursor-pointer shadow-sm"
+                    title="Print bill statement for selected or all open transactions"
+                  >
+                    <Printer className="w-4 h-4" />
+                    <span>Print Bill</span>
+                  </button>
+
                   <button
                     type="button"
                     onClick={() => setSettleModalCustomer(null)}
@@ -2406,6 +2648,30 @@ export default function StaffTabsPage() {
               setShowRevertModal(false);
               setRevertModalTxn(null);
             }}
+          />
+        )}
+
+        {/* Transaction Detail Modal (Pic 1 & Pic 2) */}
+        {selectedDetailTxn && (
+          <TransactionDetailModal
+            txn={selectedDetailTxn}
+            onClose={() => setSelectedDetailTxn(null)}
+            onTxnUpdated={async (updatedTxn) => {
+              setSelectedDetailTxn(updatedTxn);
+              await refreshAllTabsData();
+            }}
+          />
+        )}
+
+        {/* Printable Customer Bill / Statement Modal */}
+        {printCustomerBillData && (
+          <PrintableCustomerBillModal
+            isOpen={!!printCustomerBillData}
+            onClose={() => setPrintCustomerBillData(null)}
+            customerName={printCustomerBillData.customerName}
+            transactions={printCustomerBillData.transactions}
+            totalBalanceInCents={printCustomerBillData.totalBalanceInCents}
+            initialFilter={printCustomerBillData.initialFilter || 'UNPAID'}
           />
         )}
       </main>

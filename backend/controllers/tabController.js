@@ -686,10 +686,9 @@ exports.getConsolidatedCustomerTabs = async (req, res, next) => {
 exports.getCustomerOpenTransactions = async (req, res, next) => {
   try {
     const { customerName } = req.params;
-    const { customerId } = req.query;
+    const { customerId, status } = req.query;
 
     const query = {
-      status: 'UNPAID_TAB',
       tabType: { $nin: ['ROOM', 'STAFF'] },
       $or: [
         { roomNumber: { $exists: false } },
@@ -697,6 +696,14 @@ exports.getCustomerOpenTransactions = async (req, res, next) => {
         { roomNumber: '' }
       ]
     };
+
+    if (status === 'all') {
+      query.status = { $ne: 'VOIDED' };
+    } else if (status) {
+      query.status = status;
+    } else {
+      query.status = 'UNPAID_TAB';
+    }
 
     if (req.user?.companyId && req.user.role !== 'system_admin') {
       query.companyId = req.user.companyId;

@@ -130,13 +130,36 @@ export default function TransactionDetailModal({ txn, onClose, onTxnUpdated }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-6 overflow-y-auto animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-[70] bg-black/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-6 overflow-y-auto animate-in fade-in duration-200">
       {/* Click outside backdrop handler */}
       <div className="fixed inset-0" onClick={onClose} />
+
+      <style dangerouslySetInnerHTML={{ __html: `
+        @media print {
+          body * {
+            visibility: hidden !important;
+          }
+          #printable-txn-detail, #printable-txn-detail * {
+            visibility: visible !important;
+          }
+          #printable-txn-detail {
+            position: absolute !important;
+            left: 0 !important;
+            top: 0 !important;
+            width: 100% !important;
+            max-width: 100% !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            background: white !important;
+            color: black !important;
+          }
+        }
+      `}} />
 
       {/* Modal Container */}
       <div 
         ref={printRef}
+        id="printable-txn-detail"
         className="relative bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh] z-10 animate-in zoom-in-95 duration-150 print:bg-white print:text-black print:border-none print:shadow-none print:max-h-none print:w-full print:m-0"
       >
         {/* Header */}
