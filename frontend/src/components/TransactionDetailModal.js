@@ -31,6 +31,7 @@ export default function TransactionDetailModal({ txn, onClose, onTxnUpdated }) {
   const [currentTxn, setCurrentTxn] = useState(txn);
   const [showVoidModal, setShowVoidModal] = useState(false);
   const [showRevertModal, setShowRevertModal] = useState(false);
+  const [isPrinting, setIsPrinting] = useState(false);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -88,9 +89,13 @@ export default function TransactionDetailModal({ txn, onClose, onTxnUpdated }) {
   };
 
   const handlePrint = () => {
+    if (isPrinting) return;
+    setIsPrinting(true);
+
     const printElement = document.getElementById('printable-txn-detail');
     if (!printElement) {
       window.print();
+      setIsPrinting(false);
       return;
     }
 
@@ -98,9 +103,12 @@ export default function TransactionDetailModal({ txn, onClose, onTxnUpdated }) {
     iframe.style.position = 'fixed';
     iframe.style.right = '0';
     iframe.style.bottom = '0';
-    iframe.style.width = '0';
-    iframe.style.height = '0';
+    iframe.style.width = '800px';
+    iframe.style.height = '800px';
     iframe.style.border = '0';
+    iframe.style.opacity = '0';
+    iframe.style.pointerEvents = 'none';
+    iframe.style.zIndex = '-9999';
     document.body.appendChild(iframe);
 
     const doc = iframe.contentWindow.document;
@@ -129,6 +137,8 @@ export default function TransactionDetailModal({ txn, onClose, onTxnUpdated }) {
               padding: 4mm;
               width: 80mm;
               max-width: 80mm;
+              -webkit-print-color-adjust: exact;
+              print-color-adjust: exact;
             }
             button, .print\\:hidden {
               display: none !important;
@@ -144,13 +154,19 @@ export default function TransactionDetailModal({ txn, onClose, onTxnUpdated }) {
 
     iframe.contentWindow.focus();
     setTimeout(() => {
-      iframe.contentWindow.print();
-      setTimeout(() => {
-        if (document.body.contains(iframe)) {
-          document.body.removeChild(iframe);
-        }
-      }, 1000);
-    }, 200);
+      try {
+        iframe.contentWindow.print();
+      } catch (err) {
+        console.error('Print failed:', err);
+      } finally {
+        setTimeout(() => {
+          if (document.body.contains(iframe)) {
+            document.body.removeChild(iframe);
+          }
+          setIsPrinting(false);
+        }, 800);
+      }
+    }, 250);
   };
 
   // Determine Customer / Room / Staff type
@@ -539,11 +555,12 @@ export default function TransactionDetailModal({ txn, onClose, onTxnUpdated }) {
           <div className="flex items-center space-x-2">
             <button
               type="button"
+              disabled={isPrinting}
               onClick={handlePrint}
-              className="flex items-center space-x-2 px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white rounded-xl text-xs font-bold border border-slate-700 transition cursor-pointer"
+              className="flex items-center space-x-2 px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white rounded-xl text-xs font-bold border border-slate-700 disabled:opacity-50 transition cursor-pointer"
             >
               <Printer className="w-4 h-4" />
-              <span>Print Receipt</span>
+              <span>{isPrinting ? 'Printing...' : 'Print Receipt'}</span>
             </button>
 
             {currentTxn.status !== 'VOIDED' && (
