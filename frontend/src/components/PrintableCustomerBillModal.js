@@ -103,6 +103,27 @@ export default function PrintableCustomerBillModal({
   });
   const printTimeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
+  // Resolve current logged in staff name from AuthContext user object or fallback storage
+  const loggedInStaffName = useMemo(() => {
+    if (user?.fullName) return user.fullName;
+    if (user?.name) return user.name;
+    if (user?.employeeCode) return `Staff (${user.employeeCode})`;
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('pos_user');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (parsed?.fullName) return parsed.fullName;
+          if (parsed?.name) return parsed.name;
+          if (parsed?.employeeCode) return `Staff (${parsed.employeeCode})`;
+        }
+      } catch (e) {
+        // ignore
+      }
+    }
+    return 'Staff';
+  }, [user]);
+
   // Standalone HTML template for A4 Single-Page Statement
   const getA4Html = () => {
     const itemsTableHtml =
@@ -407,7 +428,7 @@ export default function PrintableCustomerBillModal({
               <div class="statement-badge-box">
                 <div class="statement-badge">Customer Account Statement</div>
                 <div class="statement-meta-text">Date: <strong>${printDateStr} ${printTimeStr}</strong></div>
-                <div class="statement-meta-text">Prepared By: <strong>${user?.name || 'Staff'}</strong></div>
+                <div class="statement-meta-text">Prepared By: <strong>${loggedInStaffName}</strong></div>
               </div>
             </div>
 
@@ -507,7 +528,7 @@ export default function PrintableCustomerBillModal({
               </div>
               <div class="signature-box">
                 <div>Authorized Cashier / Staff:</div>
-                <div class="signature-line">${user?.name || 'Authorized Staff'}</div>
+                <div class="signature-line">${loggedInStaffName}</div>
                 <div style="font-size: 9px; color: #64748b; margin-top: 2px;">Statement printed on: ${printDateStr}</div>
               </div>
             </div>
@@ -572,7 +593,7 @@ export default function PrintableCustomerBillModal({
           <div style="font-size: 11px; margin: 4px 0;">
             <div class="flex-between"><span>Customer:</span><strong>${customerName}</strong></div>
             <div class="flex-between"><span>Date:</span><span>${printDateStr} ${printTimeStr}</span></div>
-            <div class="flex-between"><span>Cashier:</span><span>${user?.name || 'Staff'}</span></div>
+            <div class="flex-between"><span>Prepared By:</span><span>${loggedInStaffName}</span></div>
             <div class="flex-between"><span>Scope:</span><strong>${filterMode === 'UNPAID' ? 'UNPAID TAB ONLY' : 'ALL ORDERS'}</strong></div>
             <div class="divider"></div>
           </div>
@@ -887,7 +908,7 @@ export default function PrintableCustomerBillModal({
                     Customer Statement
                   </span>
                   <p className="text-slate-600 text-[11px] mt-1">Date: <strong>{printDateStr} {printTimeStr}</strong></p>
-                  <p className="text-slate-600 text-[11px]">Cashier: <strong>{user?.name || 'Staff'}</strong></p>
+                  <p className="text-slate-600 text-[11px]">Prepared By: <strong>{loggedInStaffName}</strong></p>
                 </div>
               </div>
 
@@ -1044,7 +1065,7 @@ export default function PrintableCustomerBillModal({
                 </div>
                 <div>
                   <p className="text-slate-600">Authorized Staff:</p>
-                  <div className="mt-6 border-t border-slate-900 pt-1 font-bold text-slate-900">{user?.name || 'Staff'}</div>
+                  <div className="mt-6 border-t border-slate-900 pt-1 font-bold text-slate-900">{loggedInStaffName}</div>
                   <p className="text-[10px] text-slate-500 mt-0.5">Printed: {printDateStr}</p>
                 </div>
               </div>
@@ -1077,8 +1098,8 @@ export default function PrintableCustomerBillModal({
                   <span>{printDateStr} {printTimeStr}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span>Cashier:</span>
-                  <span>{user?.name || 'Staff'}</span>
+                  <span>Prepared By:</span>
+                  <span>{loggedInStaffName}</span>
                 </div>
                 <div className="flex justify-between">
                   <span>Scope:</span>
