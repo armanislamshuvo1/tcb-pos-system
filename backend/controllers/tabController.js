@@ -392,7 +392,9 @@ exports.getUnpaidTabsByProduct = async (req, res, next) => {
 // @access  Authenticated
 exports.getConsolidatedRoomTabs = async (req, res, next) => {
   try {
-    const { roomNumber, search } = req.query;
+    const { roomNumber, search, combineDorms } = req.query;
+    const shouldCombineDorms = combineDorms !== 'false';
+
     const matchStage = { 
       status: 'UNPAID_TAB', 
       roomNumber: { $type: 'string', $nin: ['', null] },
@@ -404,7 +406,12 @@ exports.getConsolidatedRoomTabs = async (req, res, next) => {
     }
 
     if (roomNumber) {
-      matchStage.roomNumber = roomNumber.toUpperCase().trim();
+      if (roomNumber.includes(',') || roomNumber.includes('&') || roomNumber.includes('_')) {
+        const rooms = roomNumber.split(/[,&_]+/).map(r => r.toUpperCase().trim()).filter(Boolean);
+        matchStage.roomNumber = { $in: rooms };
+      } else {
+        matchStage.roomNumber = roomNumber.toUpperCase().trim();
+      }
     }
 
     const pipeline = [
@@ -419,6 +426,7 @@ exports.getConsolidatedRoomTabs = async (req, res, next) => {
           $or: [
             { roomNumber: { $regex: term, $options: 'i' } },
             { guestName: { $regex: term, $options: 'i' } },
+            { customerName: { $regex: term, $options: 'i' } },
             { 'items.productNameSnapshot': { $regex: term, $options: 'i' } }
           ]
         }
@@ -426,17 +434,37 @@ exports.getConsolidatedRoomTabs = async (req, res, next) => {
     }
 
     pipeline.push(
-      // Step 1: Group by Room + Guest + Product
+      // Step 1: Group by Room Group + Normalized Guest + Product
       {
         $group: {
           _id: {
-            roomNumber: '$roomNumber',
-            guestName: { $ifNull: ['$guestName', ''] },
+            roomGroupKey: shouldCombineDorms ? {
+              $cond: {
+                if: {
+                  $and: [
+                    { $in: ['$roomNumber', ['D105', 'D106']] },
+                    {
+                      $ne: [
+                        { $toLower: { $trim: { input: { $ifNull: ['$guestName', ''] } } } },
+                        ''
+                      ]
+                    }
+                  ]
+                },
+                then: 'D105_D106',
+                else: '$roomNumber'
+              }
+            } : '$roomNumber',
+            normalizedGuestName: {
+              $toLower: { $trim: { input: { $ifNull: ['$guestName', ''] } } }
+            },
             productId: '$items.productId',
             productName: '$items.productNameSnapshot',
             categoryName: '$items.categoryNameSnapshot',
             unitPriceInCents: '$items.unitPriceInCents'
           },
+          displayGuestName: { $first: '$guestName' },
+          roomNumbers: { $addToSet: '$roomNumber' },
           totalQuantity: { $sum: '$items.quantity' },
           totalAmountInCents: { $sum: '$items.finalLineTotalInCents' },
           totalDiscountInCents: { $sum: '$items.lineDiscountInCents' },
@@ -448,18 +476,22 @@ exports.getConsolidatedRoomTabs = async (req, res, next) => {
               lineDiscountInCents: '$items.lineDiscountInCents',
               takenAt: '$items.takenAt',
               cashierName: '$cashierNameSnapshot',
-              notes: '$notes'
+              notes: '$notes',
+              roomNumber: '$roomNumber',
+              guestName: '$guestName'
             }
           }
         }
       },
-      // Step 2: Group by Room + Guest
+      // Step 2: Group by Room Group + Normalized Guest
       {
         $group: {
           _id: {
-            roomNumber: '$_id.roomNumber',
-            guestName: '$_id.guestName'
+            roomGroupKey: '$_id.roomGroupKey',
+            normalizedGuestName: '$_id.normalizedGuestName'
           },
+          guestName: { $first: '$displayGuestName' },
+          roomNumbersArrays: { $push: '$roomNumbers' },
           totalOwedInCents: { $sum: '$totalAmountInCents' },
           itemCount: { $sum: '$totalQuantity' },
           consolidatedItems: {
@@ -480,14 +512,55 @@ exports.getConsolidatedRoomTabs = async (req, res, next) => {
       {
         $project: {
           _id: 0,
-          roomNumber: '$_id.roomNumber',
-          guestName: '$_id.guestName',
+          roomGroupKey: '$_id.roomGroupKey',
+          normalizedGuestName: '$_id.normalizedGuestName',
+          guestName: { $ifNull: ['$guestName', ''] },
+          roomNumbers: {
+            $reduce: {
+              input: '$roomNumbersArrays',
+              initialValue: [],
+              in: { $setUnion: ['$$value', '$$this'] }
+            }
+          },
           totalOwedInCents: 1,
           itemCount: 1,
           consolidatedItems: 1
         }
       },
-      // Step 4: Sort by roomNumber ascending
+      // Step 4: Add computed roomNumber & isCombinedDorm fields
+      {
+        $addFields: {
+          isCombinedDorm: {
+            $eq: ['$roomGroupKey', 'D105_D106']
+          },
+          roomNumber: {
+            $cond: {
+              if: { $gt: [{ $size: '$roomNumbers' }, 1] },
+              then: {
+                $reduce: {
+                  input: '$roomNumbers',
+                  initialValue: '',
+                  in: {
+                    $cond: {
+                      if: { $eq: ['$$value', ''] },
+                      then: '$$this',
+                      else: { $concat: ['$$value', ' & ', '$$this'] }
+                    }
+                  }
+                }
+              },
+              else: {
+                $cond: {
+                  if: { $gt: [{ $size: '$roomNumbers' }, 0] },
+                  then: { $arrayElemAt: ['$roomNumbers', 0] },
+                  else: '$roomGroupKey'
+                }
+              }
+            }
+          }
+        }
+      },
+      // Step 5: Sort by roomNumber ascending, then guestName
       {
         $sort: { roomNumber: 1, guestName: 1 }
       }
@@ -511,10 +584,9 @@ exports.getConsolidatedRoomTabs = async (req, res, next) => {
 exports.getRoomOpenTransactions = async (req, res, next) => {
   try {
     const { roomNumber } = req.params;
-    const { guestName } = req.query;
+    const { guestName, rooms, roomNumbers } = req.query;
 
     const query = {
-      roomNumber: roomNumber.toUpperCase().trim(),
       status: 'UNPAID_TAB',
       tabType: { $nin: ['STAFF', 'CUSTOMER'] }
     };
@@ -523,8 +595,28 @@ exports.getRoomOpenTransactions = async (req, res, next) => {
       query.companyId = req.user.companyId;
     }
 
+    // Resolve target room numbers to match
+    let targetRooms = [];
+    const roomsParam = rooms || roomNumbers;
+    if (roomsParam) {
+      targetRooms = roomsParam.split(/[,&_]+/).map(r => r.toUpperCase().trim()).filter(Boolean);
+    } else if (roomNumber && (roomNumber.includes(',') || roomNumber.includes('&') || roomNumber.includes('_'))) {
+      targetRooms = roomNumber.split(/[,&_]+/).map(r => r.toUpperCase().trim()).filter(Boolean);
+    } else if (roomNumber) {
+      targetRooms = [roomNumber.toUpperCase().trim()];
+    }
+
+    if (targetRooms.length === 1) {
+      query.roomNumber = targetRooms[0];
+    } else if (targetRooms.length > 1) {
+      query.roomNumber = { $in: targetRooms };
+    }
+
+    // Case-insensitive trimmed match for guestName
     if (guestName !== undefined && guestName !== '') {
-      query.guestName = guestName;
+      const trimmed = guestName.trim();
+      const escaped = trimmed.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      query.guestName = { $regex: new RegExp(`^${escaped}$`, 'i') };
     } else if (guestName === '') {
       query.$or = [{ guestName: null }, { guestName: '' }, { guestName: { $exists: false } }];
     }
@@ -538,7 +630,8 @@ exports.getRoomOpenTransactions = async (req, res, next) => {
     res.status(200).json({
       success: true,
       data: {
-        roomNumber: roomNumber.toUpperCase(),
+        roomNumber: targetRooms.join(' & '),
+        roomNumbers: targetRooms,
         guestName: guestName || '',
         totalBalanceInCents,
         transactionCount: openTransactions.length,
@@ -606,13 +699,16 @@ exports.getConsolidatedCustomerTabs = async (req, res, next) => {
       {
         $group: {
           _id: {
-            customerName: '$customerName',
             customerId: '$customerId',
+            normalizedCustomerName: {
+              $toLower: { $trim: { input: { $ifNull: ['$customerName', ''] } } }
+            },
             productId: '$items.productId',
             productName: '$items.productNameSnapshot',
             categoryName: '$items.categoryNameSnapshot',
             unitPriceInCents: '$items.unitPriceInCents'
           },
+          displayCustomerName: { $first: '$customerName' },
           totalQuantity: { $sum: '$items.quantity' },
           totalAmountInCents: { $sum: '$items.finalLineTotalInCents' },
           totalDiscountInCents: { $sum: '$items.lineDiscountInCents' },
@@ -633,9 +729,10 @@ exports.getConsolidatedCustomerTabs = async (req, res, next) => {
       {
         $group: {
           _id: {
-            customerName: '$_id.customerName',
-            customerId: '$_id.customerId'
+            customerId: '$_id.customerId',
+            normalizedCustomerName: '$_id.normalizedCustomerName'
           },
+          customerName: { $first: '$displayCustomerName' },
           totalOwedInCents: { $sum: '$totalAmountInCents' },
           itemCount: { $sum: '$totalQuantity' },
           consolidatedItems: {
@@ -656,7 +753,7 @@ exports.getConsolidatedCustomerTabs = async (req, res, next) => {
       {
         $project: {
           _id: 0,
-          customerName: '$_id.customerName',
+          customerName: { $ifNull: ['$customerName', '$_id.normalizedCustomerName'] },
           customerId: '$_id.customerId',
           totalOwedInCents: 1,
           itemCount: 1,
@@ -710,17 +807,20 @@ exports.getCustomerOpenTransactions = async (req, res, next) => {
     }
 
     const decodedCustomerName = decodeURIComponent(customerName).trim();
+    const escaped = decodedCustomerName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const customerRegex = new RegExp(`^${escaped}$`, 'i');
+
     if (customerId && mongoose.Types.ObjectId.isValid(customerId)) {
       query.$and = [
         {
           $or: [
             { customerId: new mongoose.Types.ObjectId(customerId) },
-            { customerName: decodedCustomerName }
+            { customerName: customerRegex }
           ]
         }
       ];
     } else {
-      query.customerName = decodedCustomerName;
+      query.customerName = customerRegex;
     }
 
     const openTransactions = await Transaction.find(query)

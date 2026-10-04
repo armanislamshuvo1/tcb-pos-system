@@ -147,9 +147,111 @@ const runRoomBillsVerification = async () => {
   await settleTransactions(reqSettle, resSettle, (e) => console.error(e));
   console.log(`[PASS] Settled Alice tab with TRANSFER: settledCount = ${settleResult.data?.settledCount}`);
 
-  // 5. Cleanup test records
-  await Transaction.deleteOne({ _id: txn1._id });
-  await Transaction.deleteOne({ _id: txn2._id });
+  // 5. Test combining D105 and D106 for same customer with different casing ("Ms Poon Test" vs "ms poon test" vs "MS POON TEST")
+  await Transaction.deleteMany({ txnNumber: { $regex: '^ROOM-POON-' } });
+
+  const txnPoon1 = await Transaction.create({
+    txnNumber: `ROOM-POON-${Date.now()}-1`,
+    status: 'UNPAID_TAB',
+    cashierId: cashier._id,
+    cashierNameSnapshot: cashier.fullName || 'Cashier',
+    tabType: 'ROOM',
+    roomNumber: 'D105',
+    guestName: 'Ms Poon Test',
+    items: [{
+      productId: dummyProdId,
+      productNameSnapshot: 'Iced Latte',
+      skuSnapshot: dummySku,
+      unitPriceInCents: 500,
+      quantity: 1,
+      finalLineTotalInCents: 500,
+      takenAt: new Date()
+    }],
+    subtotalInCents: 500,
+    grandTotalInCents: 500,
+    paymentMethod: 'TAB_DEFERRED',
+    companyId: cashier.companyId
+  });
+
+  const txnPoon2 = await Transaction.create({
+    txnNumber: `ROOM-POON-${Date.now()}-2`,
+    status: 'UNPAID_TAB',
+    cashierId: cashier._id,
+    cashierNameSnapshot: cashier.fullName || 'Cashier',
+    tabType: 'ROOM',
+    roomNumber: 'D105',
+    guestName: 'ms poon test',
+    items: [{
+      productId: dummyProdId,
+      productNameSnapshot: 'Iced Latte',
+      skuSnapshot: dummySku,
+      unitPriceInCents: 500,
+      quantity: 1,
+      finalLineTotalInCents: 500,
+      takenAt: new Date()
+    }],
+    subtotalInCents: 500,
+    grandTotalInCents: 500,
+    paymentMethod: 'TAB_DEFERRED',
+    companyId: cashier.companyId
+  });
+
+  const txnPoon3 = await Transaction.create({
+    txnNumber: `ROOM-POON-${Date.now()}-3`,
+    status: 'UNPAID_TAB',
+    cashierId: cashier._id,
+    cashierNameSnapshot: cashier.fullName || 'Cashier',
+    tabType: 'ROOM',
+    roomNumber: 'D106',
+    guestName: 'MS POON TEST',
+    items: [{
+      productId: dummyProdId,
+      productNameSnapshot: 'Croissant',
+      skuSnapshot: dummySku,
+      unitPriceInCents: 300,
+      quantity: 1,
+      finalLineTotalInCents: 300,
+      takenAt: new Date()
+    }],
+    subtotalInCents: 300,
+    grandTotalInCents: 300,
+    paymentMethod: 'TAB_DEFERRED',
+    companyId: cashier.companyId
+  });
+
+  let poonConsolidated = null;
+  await getConsolidatedRoomTabs({ query: { combineDorms: 'true' }, user: { role: 'system_admin', companyId: cashier.companyId } }, {
+    status: () => ({ json: (d) => { poonConsolidated = d.data; } })
+  }, (e) => console.error(e));
+
+  const msPoonTabs = poonConsolidated.filter(t => t.normalizedGuestName === 'ms poon test');
+  console.log(`[PASS] Found ${msPoonTabs.length} unified tab group(s) for Ms Poon across D105 & D106 (expected 1).`);
+  if (msPoonTabs.length !== 1) {
+    throw new Error(`Expected exactly 1 combined tab group for Ms Poon, but got ${msPoonTabs.length}!`);
+  }
+  const poonTab = msPoonTabs[0];
+  console.log(`[PASS] Combined room display: "${poonTab.roomNumber}" (expected contains D105 and D106).`);
+  console.log(`[PASS] Combined balance: ${poonTab.totalOwedInCents} cents (expected 1300 cents = RM 13.00).`);
+  if (poonTab.totalOwedInCents !== 1300) {
+    throw new Error(`Expected totalOwedInCents to be 1300, got ${poonTab.totalOwedInCents}`);
+  }
+
+  // Test getRoomOpenTransactions across D105 and D106 for Ms Poon
+  let poonTxns = null;
+  await getRoomOpenTransactions({
+    params: { roomNumber: 'D105 & D106' },
+    query: { guestName: 'Ms Poon Test', rooms: 'D105,D106' },
+    user: { role: 'system_admin', companyId: cashier.companyId }
+  }, {
+    status: () => ({ json: (d) => { poonTxns = d.data.transactions; } })
+  }, (e) => console.error(e));
+  console.log(`[PASS] Open transactions fetched for Ms Poon across D105 & D106: ${poonTxns.length} (expected 3).`);
+  if (poonTxns.length !== 3) {
+    throw new Error(`Expected 3 open transactions for Ms Poon, got ${poonTxns.length}`);
+  }
+
+  // Cleanup test records
+  await Transaction.deleteMany({ _id: { $in: [txn1._id, txn2._id, txnPoon1._id, txnPoon2._id, txnPoon3._id] } });
   console.log('[PASS] Cleaned up temporary test transactions.');
 
   await mongoose.disconnect();

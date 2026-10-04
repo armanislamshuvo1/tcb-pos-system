@@ -356,13 +356,16 @@ export default function StaffTabsPage() {
   };
 
   // Open Room Settle Modal and fetch discrete transactions
-  const openRoomSettleModal = async (roomNumber, guestName) => {
+  const openRoomSettleModal = async (roomNumber, guestName, roomNumbers = null) => {
     try {
       setRoomSettleLoading(true);
-      setSettleModalRoom({ roomNumber, guestName: guestName || '' });
+      setSettleModalRoom({ roomNumber, guestName: guestName || '', roomNumbers });
       const params = {};
       if (guestName) params.guestName = guestName;
-      const res = await axiosSecure.get(`/api/tabs/rooms/${roomNumber}/transactions`, { params });
+      if (Array.isArray(roomNumbers) && roomNumbers.length > 0) {
+        params.rooms = roomNumbers.join(',');
+      }
+      const res = await axiosSecure.get(`/api/tabs/rooms/${encodeURIComponent(roomNumber)}/transactions`, { params });
       if (res.data?.success) {
         const txns = res.data.data.transactions;
         setRoomTransactions(txns);
@@ -1556,9 +1559,9 @@ export default function StaffTabsPage() {
             ) : (
               <div className="space-y-4">
                 {filteredRoomTabs.map((tab) => {
-                  const roomKey = `${tab.roomNumber}_${tab.guestName || ''}`;
+                  const roomKey = `${tab.roomNumber}_${tab.normalizedGuestName || tab.guestName || ''}`;
                   const isExpanded = !!expandedRoomKeys[roomKey];
-                  const dorm = isDormRoom(tab.roomNumber);
+                  const dorm = tab.isCombinedDorm || isDormRoom(tab.roomNumber);
                   const roomMeta = getRoomByNumber(tab.roomNumber);
                   const wingChar = tab.roomNumber ? tab.roomNumber.charAt(0).toUpperCase() : 'OTHER';
 
@@ -1591,11 +1594,15 @@ export default function StaffTabsPage() {
                                 {tab.roomNumber}
                               </span>
                               <h2 className="text-base sm:text-lg font-extrabold text-white">
-                                {roomMeta?.type || 'Room'} {tab.roomNumber}
+                                {tab.isCombinedDorm
+                                  ? `Dorm (${tab.roomNumber})`
+                                  : `${roomMeta?.type || 'Room'} ${tab.roomNumber}`}
                               </h2>
                               {dorm && (
                                 <span className="px-2 py-0.5 rounded-md text-[11px] font-bold bg-orange-500/15 text-orange-400 border border-orange-500/30">
-                                  Dorm (6 Pax)
+                                  {tab.isCombinedDorm && tab.roomNumbers?.length > 1
+                                    ? 'Combined Dorm (D105 & D106)'
+                                    : 'Dorm (6 Pax)'}
                                 </span>
                               )}
                               {tab.guestName && (
@@ -1611,7 +1618,7 @@ export default function StaffTabsPage() {
                           </div>
                         </div>
 
-                        <div className="flex items-center space-x-4">
+                        <div className="flex items-center space-x-3 sm:space-x-4">
                           <div className="text-right">
                             <div className="text-xs text-slate-400 font-medium">Balance Due</div>
                             <div className="text-lg sm:text-xl font-extrabold text-amber-400 font-mono">
@@ -1619,11 +1626,49 @@ export default function StaffTabsPage() {
                             </div>
                           </div>
 
+                          {tab.guestName && (
+                            <button
+                              type="button"
+                              onClick={async (e) => {
+                                e.stopPropagation();
+                                try {
+                                  setPrintCustomerBillLoading(true);
+                                  const params = { guestName: tab.guestName };
+                                  if (Array.isArray(tab.roomNumbers) && tab.roomNumbers.length > 0) {
+                                    params.rooms = tab.roomNumbers.join(',');
+                                  }
+                                  const res = await axiosSecure.get(
+                                    `/api/tabs/rooms/${encodeURIComponent(tab.roomNumber)}/transactions`,
+                                    { params }
+                                  );
+                                  if (res.data?.success) {
+                                    const txns = res.data.data.transactions || [];
+                                    setPrintCustomerBillData({
+                                      customerName: `${tab.guestName} (${tab.roomNumber})`,
+                                      transactions: txns,
+                                      totalBalanceInCents: res.data.data.totalBalanceInCents || tab.totalOwedInCents,
+                                      initialFilter: 'UNPAID'
+                                    });
+                                  }
+                                } catch (err) {
+                                  console.error('Error opening print modal for room bill:', err);
+                                } finally {
+                                  setPrintCustomerBillLoading(false);
+                                }
+                              }}
+                              className="p-2 sm:px-3 sm:py-2 bg-slate-800 hover:bg-slate-750 text-slate-200 hover:text-amber-400 active:scale-95 font-bold text-xs sm:text-sm rounded-xl border border-slate-700 hover:border-amber-500/30 transition flex items-center space-x-1.5 cursor-pointer shadow-sm"
+                              title="Print consolidated room bill statement"
+                            >
+                              <Printer className="w-4 h-4" />
+                              <span className="hidden sm:inline">Print Bill</span>
+                            </button>
+                          )}
+
                           <button
                             type="button"
                             onClick={(e) => {
                               e.stopPropagation();
-                              openRoomSettleModal(tab.roomNumber, tab.guestName);
+                              openRoomSettleModal(tab.roomNumber, tab.guestName, tab.roomNumbers);
                             }}
                             className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-bold text-xs sm:text-sm rounded-xl shadow-md transition flex items-center space-x-1.5 cursor-pointer"
                           >
@@ -1716,6 +1761,11 @@ export default function StaffTabsPage() {
                                                 <span>{occ.txnNumber}</span>
                                                 <Eye className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity" />
                                               </span>
+                                              {occ.roomNumber && (
+                                                <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-500/15 text-amber-300 border border-amber-500/30 font-mono">
+                                                  Room {occ.roomNumber}
+                                                </span>
+                                              )}
                                               <span className="text-slate-500">•</span>
                                               <span>{dateStr} at {timeStr}</span>
                                               <span className="text-emerald-400 font-bold font-mono">({occ.quantity}x)</span>
@@ -2381,9 +2431,20 @@ export default function StaffTabsPage() {
                             <span>{txn.txnNumber}</span>
                             <Eye className="w-3.5 h-3.5 opacity-60 group-hover:opacity-100 transition-opacity" />
                           </div>
-                          <div className="text-xs text-slate-400">
-                            {dateStr} {timeStr} • {txn.items?.length || 0} items
-                            {txn.notes && <span className="ml-1 text-slate-500 italic">• &ldquo;{txn.notes}&rdquo;</span>}
+                          <div className="text-xs text-slate-400 flex items-center space-x-1.5 flex-wrap">
+                            {txn.roomNumber && (
+                              <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-500/15 text-amber-300 border border-amber-500/30 font-mono">
+                                Room {txn.roomNumber}
+                              </span>
+                            )}
+                            {txn.guestName && (
+                              <span className="text-emerald-400 font-medium">({txn.guestName})</span>
+                            )}
+                            <span>•</span>
+                            <span>{dateStr} {timeStr}</span>
+                            <span>•</span>
+                            <span>{txn.items?.length || 0} items</span>
+                            {txn.notes && <span className="text-slate-500 italic">• &ldquo;{txn.notes}&rdquo;</span>}
                           </div>
                         </div>
                       </div>

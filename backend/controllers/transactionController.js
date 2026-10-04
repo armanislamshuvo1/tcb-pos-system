@@ -110,8 +110,11 @@ exports.createTransaction = async (req, res, next) => {
           });
         }
         resolvedTabType = 'ROOM';
-        resolvedCustomerId = null;
-        resolvedCustomerName = null;
+        if (!resolvedCustomerName && resolvedGuestName) {
+          resolvedCustomerName = resolvedGuestName;
+        } else if (!resolvedGuestName && resolvedCustomerName) {
+          resolvedGuestName = resolvedCustomerName;
+        }
         resolvedStaffMemberId = null;
         staffNameSnapshot = null;
       } else {

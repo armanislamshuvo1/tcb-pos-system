@@ -81,17 +81,20 @@ export const ROOMS = [
 export const getRoomByNumber = (roomNumber) => {
   if (!roomNumber) return null;
   const normalized = roomNumber.toUpperCase().trim();
-  return (
-    ROOMS.find((r) => r.number === normalized) || {
-      number: normalized,
-      wing: normalized[0] || "OTHER",
-      type: "Custom Room",
-      isDorm: ["D105", "D106"].includes(normalized),
-    }
-  );
+  const directMatch = ROOMS.find((r) => r.number === normalized);
+  if (directMatch) return directMatch;
+
+  const isDorm = normalized.includes("D105") || normalized.includes("D106");
+  return {
+    number: normalized,
+    wing: normalized[0] || "OTHER",
+    type: isDorm ? "Dorm (6 Pax)" : "Custom Room",
+    isDorm,
+  };
 };
 
 export const isDormRoom = (roomNumber) => {
   if (!roomNumber) return false;
-  return ["D105", "D106"].includes(roomNumber.toUpperCase().trim());
+  const num = roomNumber.toUpperCase().trim();
+  return ["D105", "D106"].includes(num) || num.includes("D105") || num.includes("D106");
 };
