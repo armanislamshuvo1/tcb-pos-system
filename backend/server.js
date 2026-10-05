@@ -16,6 +16,8 @@ const reportRoutes = require('./routes/reportRoutes');
 const companyRoutes = require('./routes/companyRoutes');
 const customerRoutes = require('./routes/customerRoutes');
 const terminalRoutes = require('./routes/terminalRoutes');
+const healthRoutes = require('./routes/healthRoutes');
+const healthController = require('./controllers/healthController');
 const runMigration = require('./scripts/migrateSystemAdmin');
 
 const helmet = require('helmet');
@@ -27,8 +29,8 @@ const PORT = process.env.PORT || 5000;
 app.set('trust proxy', 1);
 
 // Connect to MongoDB & Run Seamless Multi-Tenant Migration
-connectDB().then(() => {
-  runMigration().catch((err) => console.error('[Auto-Migration Warning]:', err.message));
+const migrationPromise = connectDB().then(() => {
+  return runMigration().catch((err) => console.error('[Auto-Migration Warning]:', err.message));
 });
 
 // Security Middleware
@@ -104,17 +106,13 @@ app.use('/api/companies', companyRoutes);
 app.use('/api/customers', customerRoutes);
 app.use('/api/terminal', terminalRoutes);
 
-// Health check endpoint
-app.get('/api/health', (req, res) => {
-  res.status(200).json({
-    success: true,
-    data: {
-      status: 'healthy',
-      timestamp: new Date().toISOString(),
-      uptime: process.uptime()
-    }
-  });
-});
+// Open Health & Status Check Endpoints (Root & API paths)
+app.get('/', healthController.getHealthStatus);
+app.head('/', healthController.getHealthStatus);
+app.use('/health', healthRoutes);
+app.use('/status', healthRoutes);
+app.use('/api/health', healthRoutes);
+app.use('/api/status', healthRoutes);
 
 // Centralized Error Handling Middleware (must be registered last)
 app.use(errorHandler);
@@ -132,4 +130,4 @@ const server = app.listen(PORT, () => {
   console.log(`[Express API Server] Running in ${process.env.NODE_ENV || 'development'} mode on port ${PORT}`);
 });
 
-module.exports = { app, server };
+module.exports = { app, server, migrationPromise };
