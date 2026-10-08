@@ -12,7 +12,8 @@ import {
   ShieldAlert,
   CheckCircle2,
   Delete,
-  AlertCircle
+  AlertCircle,
+  Loader2
 } from 'lucide-react';
 
 const PRESET_REASONS = [
@@ -160,8 +161,12 @@ export default function RevertSettlementModal({ isOpen, txn, onClose, onRevertSu
           </div>
 
           <button
-            onClick={onClose}
-            className="p-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition"
+            type="button"
+            disabled={submitting}
+            onClick={() => !submitting && onClose()}
+            className={`p-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition ${
+              submitting ? 'opacity-30 cursor-not-allowed pointer-events-none' : 'cursor-pointer'
+            }`}
             title="Close"
           >
             <X className="w-5 h-5" />
@@ -320,8 +325,17 @@ export default function RevertSettlementModal({ isOpen, txn, onClose, onRevertSu
             disabled={submitting || !reason.trim() || !pinCode}
             className="px-5 py-2.5 bg-amber-500 hover:bg-amber-400 active:scale-95 text-black rounded-xl text-xs font-black transition shadow-lg shadow-amber-500/20 disabled:opacity-40 disabled:pointer-events-none cursor-pointer flex items-center space-x-2"
           >
-            <RotateCcw className="w-4 h-4" />
-            <span>{submitting ? 'Reverting...' : 'Confirm & Reopen Bill'}</span>
+            {submitting ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin shrink-0" />
+                <span>Reverting Settlement...</span>
+              </>
+            ) : (
+              <>
+                <RotateCcw className="w-4 h-4 shrink-0" />
+                <span>Confirm & Reopen Bill</span>
+              </>
+            )}
           </button>
         </div>
       </div>

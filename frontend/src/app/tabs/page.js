@@ -18,30 +18,24 @@ import { useAuth } from '../../context/AuthContext';
 import { formatCurrency } from '../../utils/currency';
 import { 
   Users, 
-  ChevronDown, 
-  ChevronRight, 
-  Clock, 
-  DollarSign, 
-  CreditCard, 
-  CheckCircle, 
-  Calendar,
-  Layers,
-  FileText,
-  X,
-  Package,
-  Search,
-  BedDouble,
-  UserCheck,
-  Building,
-  RotateCcw,
-  Printer,
-  Eye,
-  ExternalLink
+  X, 
+  RotateCcw
 } from 'lucide-react';
-import { ROOM_WINGS, isDormRoom, getRoomByNumber } from '../../utils/rooms';
 import RevertSettlementModal from '../../components/RevertSettlementModal';
 import TransactionDetailModal from '../../components/TransactionDetailModal';
 import PrintableCustomerBillModal from '../../components/PrintableCustomerBillModal';
+
+// Modular Sub-Components
+import TabNavigation from '../../components/tabs/TabNavigation';
+import AllBillsView from '../../components/tabs/AllBillsView';
+import CustomerTabsView from '../../components/tabs/CustomerTabsView';
+import StaffTabsView from '../../components/tabs/StaffTabsView';
+import RoomTabsView from '../../components/tabs/RoomTabsView';
+import ProductTabsView from '../../components/tabs/ProductTabsView';
+import RecentlySettledView from '../../components/tabs/RecentlySettledView';
+import StaffSettleModal from '../../components/tabs/StaffSettleModal';
+import RoomSettleModal from '../../components/tabs/RoomSettleModal';
+import CustomerSettleModal from '../../components/tabs/CustomerSettleModal';
 
 export default function StaffTabsPage() {
   const axiosSecure = useAxiosSecure();
@@ -104,11 +98,11 @@ export default function StaffTabsPage() {
   const [revertModalTxn, setRevertModalTxn] = useState(null);
   const [showRevertModal, setShowRevertModal] = useState(false);
 
-  // Transaction Detail Modal State (Pic 1 & Pic 2)
+  // Transaction Detail Modal State
   const [selectedDetailTxn, setSelectedDetailTxn] = useState(null);
   const [detailTxnLoading, setDetailTxnLoading] = useState(false);
 
-  // Printable Customer Bill Modal State (Customer Statements & Batch Prints)
+  // Printable Customer Bill Modal State
   const [printCustomerBillData, setPrintCustomerBillData] = useState(null);
   const [printCustomerBillLoading, setPrintCustomerBillLoading] = useState(false);
 
@@ -207,6 +201,10 @@ export default function StaffTabsPage() {
     }));
   };
 
+  const refreshAllTabsData = async () => {
+    await queryClient.invalidateQueries({ queryKey: queryKeys.tabs.all });
+  };
+
   // Open Staff Settle Modal and fetch discrete transactions
   const openSettleModal = async (staffId, staffName) => {
     try {
@@ -216,7 +214,6 @@ export default function StaffTabsPage() {
       if (res.data?.success) {
         const txns = res.data.data.transactions;
         setStaffTransactions(txns);
-        // By default, select all open transactions
         setSelectedTxnIds(txns.map((t) => t._id));
       }
     } catch (err) {
@@ -240,11 +237,7 @@ export default function StaffTabsPage() {
     }
   };
 
-  const refreshAllTabsData = async () => {
-    await queryClient.invalidateQueries({ queryKey: queryKeys.tabs.all });
-  };
-
-  // Open Transaction Details Modal (from complete txn object or by fetching ID)
+  // Open Transaction Details Modal
   const handleViewTxnDetails = async (txnOrId) => {
     if (!txnOrId) return;
     if (typeof txnOrId === 'object' && txnOrId._id) {
@@ -303,6 +296,33 @@ export default function StaffTabsPage() {
         type: 'error',
         message: err.response?.data?.message || 'Failed to prepare customer bill for printing'
       });
+    } finally {
+      setPrintCustomerBillLoading(false);
+    }
+  };
+
+  const handleOpenPrintRoomBill = async (tab) => {
+    try {
+      setPrintCustomerBillLoading(true);
+      const params = { guestName: tab.guestName };
+      if (Array.isArray(tab.roomNumbers) && tab.roomNumbers.length > 0) {
+        params.rooms = tab.roomNumbers.join(',');
+      }
+      const res = await axiosSecure.get(
+        `/api/tabs/rooms/${encodeURIComponent(tab.roomNumber)}/transactions`,
+        { params }
+      );
+      if (res.data?.success) {
+        const txns = res.data.data.transactions || [];
+        setPrintCustomerBillData({
+          customerName: `${tab.guestName} (${tab.roomNumber})`,
+          transactions: txns,
+          totalBalanceInCents: res.data.data.totalBalanceInCents || tab.totalOwedInCents,
+          initialFilter: 'UNPAID'
+        });
+      }
+    } catch (err) {
+      console.error('Error opening print modal for room bill:', err);
     } finally {
       setPrintCustomerBillLoading(false);
     }
@@ -525,37 +545,9 @@ export default function StaffTabsPage() {
     .filter((t) => selectedRoomTxnIds.includes(t._id))
     .reduce((acc, t) => acc + t.grandTotalInCents, 0);
 
-  // Filtered room tabs based on Wing filter
-  const filteredRoomTabs = useMemo(() => {
-    return roomTabs.filter((tab) => {
-      if (selectedWing === 'ALL') return true;
-      const wing = tab.roomNumber ? tab.roomNumber.charAt(0).toUpperCase() : '';
-      return wing === selectedWing;
-    });
-  }, [roomTabs, selectedWing]);
-
-  // Sorted and filtered all bills
-  const sortedAllBills = useMemo(() => {
-    const list = [...allBills];
-    if (allSortBy === 'newest') {
-      return list.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-    }
-    if (allSortBy === 'oldest') {
-      return list.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
-    }
-    if (allSortBy === 'amount_desc') {
-      return list.sort((a, b) => b.grandTotalInCents - a.grandTotalInCents);
-    }
-    if (allSortBy === 'amount_asc') {
-      return list.sort((a, b) => a.grandTotalInCents - b.grandTotalInCents);
-    }
-    return list;
-  }, [allBills, allSortBy]);
-
   const customerBillsCount = useMemo(() => allBills.filter((b) => b.tabType === 'CUSTOMER' || (!b.tabType && b.customerName)).length, [allBills]);
   const roomBillsCount = useMemo(() => allBills.filter((b) => b.tabType === 'ROOM' || b.roomNumber).length, [allBills]);
   const staffBillsCount = useMemo(() => allBills.filter((b) => b.tabType === 'STAFF' || b.staffMemberId).length, [allBills]);
-  const allBillsTotalDueCents = useMemo(() => sortedAllBills.reduce((acc, b) => acc + (b.grandTotalInCents || 0), 0), [sortedAllBills]);
 
   return (
     <div className="min-h-screen bg-slate-950 text-white flex flex-col">
@@ -638,2058 +630,184 @@ export default function StaffTabsPage() {
           </div>
         )}
 
-        {/* View Mode Switcher */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-900/60 p-2 rounded-2xl border border-slate-800">
-          <div className="flex items-center space-x-2 overflow-x-auto pb-1 sm:pb-0 scrollbar-none">
-            <button
-              type="button"
-              onClick={() => setViewMode('all')}
-              className={`flex items-center space-x-2 px-4 py-2.5 rounded-xl font-bold text-sm transition shrink-0 ${
-                viewMode === 'all'
-                  ? 'bg-amber-500 text-black shadow-lg shadow-amber-500/20'
-                  : 'bg-slate-800/80 text-slate-300 hover:bg-slate-800 hover:text-white'
-              }`}
-            >
-              <FileText className="w-4 h-4" />
-              <span>All Bills ({allBills.length})</span>
-            </button>
+        {/* View Mode Switcher Navigation */}
+        <TabNavigation
+          viewMode={viewMode}
+          setViewMode={setViewMode}
+          allBillsCount={allBills.length}
+          customerBillsCount={customerBillsCount}
+          roomBillsCount={roomBillsCount}
+          staffBillsCount={staffBillsCount}
+          productTabsCount={productTabs.length}
+          settledBillsCount={settledBills.length}
+          onOpenBatchPrint={() => {
+            const firstCustomer = customerTabs[0]?.customerName;
+            if (firstCustomer) {
+              handleOpenPrintCustomerBill(firstCustomer);
+            }
+          }}
+        />
 
-            <button
-              type="button"
-              onClick={() => setViewMode('by_customer')}
-              className={`flex items-center space-x-2 px-4 py-2.5 rounded-xl font-bold text-sm transition shrink-0 ${
-                viewMode === 'by_customer'
-                  ? 'bg-amber-500 text-black shadow-lg shadow-amber-500/20'
-                  : 'bg-slate-800/80 text-slate-300 hover:bg-slate-800 hover:text-white'
-              }`}
-            >
-              <UserCheck className="w-4 h-4" />
-              <span>By Customer Bill ({customerTabs.length})</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setViewMode('by_room')}
-              className={`flex items-center space-x-2 px-4 py-2.5 rounded-xl font-bold text-sm transition shrink-0 ${
-                viewMode === 'by_room'
-                  ? 'bg-amber-500 text-black shadow-lg shadow-amber-500/20'
-                  : 'bg-slate-800/80 text-slate-300 hover:bg-slate-800 hover:text-white'
-              }`}
-            >
-              <BedDouble className="w-4 h-4" />
-              <span>By Room Bill ({roomTabs.length})</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setViewMode('by_staff')}
-              className={`flex items-center space-x-2 px-4 py-2.5 rounded-xl font-bold text-sm transition shrink-0 ${
-                viewMode === 'by_staff'
-                  ? 'bg-amber-500 text-black shadow-lg shadow-amber-500/20'
-                  : 'bg-slate-800/80 text-slate-300 hover:bg-slate-800 hover:text-white'
-              }`}
-            >
-              <Users className="w-4 h-4" />
-              <span>By Staff Member ({tabs.length})</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setViewMode('by_product')}
-              className={`flex items-center space-x-2 px-4 py-2.5 rounded-xl font-bold text-sm transition shrink-0 ${
-                viewMode === 'by_product'
-                  ? 'bg-amber-500 text-black shadow-lg shadow-amber-500/20'
-                  : 'bg-slate-800/80 text-slate-300 hover:bg-slate-800 hover:text-white'
-              }`}
-            >
-              <Package className="w-4 h-4" />
-              <span>Search Unpaid by Product ({productTabs.length})</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setViewMode('recently_settled')}
-              className={`flex items-center space-x-2 px-4 py-2.5 rounded-xl font-bold text-sm transition shrink-0 ${
-                viewMode === 'recently_settled'
-                  ? 'bg-amber-500 text-black shadow-lg shadow-amber-500/20'
-                  : 'bg-slate-800/80 text-slate-300 hover:bg-slate-800 hover:text-white'
-              }`}
-            >
-              <RotateCcw className="w-4 h-4" />
-              <span>Recently Settled ({settledBills.length})</span>
-            </button>
-          </div>
-
-          <div className="text-xs text-slate-400 font-medium px-2 flex items-center space-x-1.5 shrink-0">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-            <span>Live unpaid ledger (status: <strong className="text-amber-400 font-mono">UNPAID_TAB</strong>)</span>
-          </div>
-        </div>
-
-        {/* View -1: All Unpaid / Hold Bills View */}
+        {/* VIEW 0: ALL OPEN BILLS */}
         {viewMode === 'all' && (
-          <div className="space-y-4">
-            {/* Controls: Search, Filter Chips, Sort Dropdown */}
-            <div className="space-y-3">
-              <div className="flex flex-col md:flex-row gap-3">
-                {/* Search Input */}
-                <div className="relative flex-1">
-                  <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
-                    <Search className="w-5 h-5 text-slate-400" />
-                  </div>
-                  <input
-                    type="text"
-                    value={allSearchTerm}
-                    onChange={(e) => setAllSearchTerm(e.target.value)}
-                    placeholder="Search by transaction #, customer, room number, guest, staff, or product..."
-                    className="w-full pl-11 pr-10 py-3.5 bg-slate-900 border border-slate-700 rounded-2xl text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500 text-sm shadow-inner transition"
-                  />
-                  {allSearchTerm && (
-                    <button
-                      type="button"
-                      onClick={() => setAllSearchTerm('')}
-                      className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-slate-400 hover:text-white cursor-pointer"
-                    >
-                      <X className="w-4 h-4" />
-                    </button>
-                  )}
-                </div>
-
-                {/* Sort Select */}
-                <div className="flex items-center space-x-2 shrink-0">
-                  <div className="relative">
-                    <select
-                      value={allSortBy}
-                      onChange={(e) => setAllSortBy(e.target.value)}
-                      className="appearance-none bg-slate-900 border border-slate-700 rounded-2xl px-4 py-3.5 pr-9 text-xs sm:text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-amber-500 cursor-pointer"
-                    >
-                      <option value="newest">Newest Held First</option>
-                      <option value="oldest">Oldest Held First</option>
-                      <option value="amount_desc">Amount: High to Low</option>
-                      <option value="amount_asc">Amount: Low to High</option>
-                    </select>
-                    <ChevronDown className="w-4 h-4 text-slate-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-                  </div>
-                </div>
-              </div>
-
-              {/* Filter Tabs / Pills */}
-              <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
-                <div className="flex items-center space-x-1.5 overflow-x-auto pb-1 sm:pb-0 scrollbar-none">
-                  <button
-                    type="button"
-                    onClick={() => setAllBillTypeFilter('ALL')}
-                    className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition flex items-center space-x-1.5 cursor-pointer ${
-                      allBillTypeFilter === 'ALL'
-                        ? 'bg-amber-500 text-black shadow-md shadow-amber-500/20'
-                        : 'bg-slate-900 text-slate-400 hover:text-white hover:bg-slate-850 border border-slate-800'
-                    }`}
-                  >
-                    <span>All Open Bills</span>
-                    <span className="px-1.5 py-0.5 rounded-full text-[10px] bg-black/20 font-mono font-bold">
-                      {allBills.length}
-                    </span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setAllBillTypeFilter('CUSTOMER')}
-                    className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition flex items-center space-x-1.5 cursor-pointer ${
-                      allBillTypeFilter === 'CUSTOMER'
-                        ? 'bg-blue-600 text-white shadow-md shadow-blue-600/20'
-                        : 'bg-slate-900 text-slate-400 hover:text-white hover:bg-slate-850 border border-slate-800'
-                    }`}
-                  >
-                    <UserCheck className="w-3.5 h-3.5" />
-                    <span>Customer Bills</span>
-                    <span className="px-1.5 py-0.5 rounded-full text-[10px] bg-black/20 font-mono font-bold">
-                      {customerBillsCount}
-                    </span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setAllBillTypeFilter('ROOM')}
-                    className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition flex items-center space-x-1.5 cursor-pointer ${
-                      allBillTypeFilter === 'ROOM'
-                        ? 'bg-orange-600 text-white shadow-md shadow-orange-600/20'
-                        : 'bg-slate-900 text-slate-400 hover:text-white hover:bg-slate-850 border border-slate-800'
-                    }`}
-                  >
-                    <BedDouble className="w-3.5 h-3.5" />
-                    <span>Room Bills</span>
-                    <span className="px-1.5 py-0.5 rounded-full text-[10px] bg-black/20 font-mono font-bold">
-                      {roomBillsCount}
-                    </span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setAllBillTypeFilter('STAFF')}
-                    className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition flex items-center space-x-1.5 cursor-pointer ${
-                      allBillTypeFilter === 'STAFF'
-                        ? 'bg-purple-600 text-white shadow-md shadow-purple-600/20'
-                        : 'bg-slate-900 text-slate-400 hover:text-white hover:bg-slate-850 border border-slate-800'
-                    }`}
-                  >
-                    <Users className="w-3.5 h-3.5" />
-                    <span>Staff Tabs</span>
-                    <span className="px-1.5 py-0.5 rounded-full text-[10px] bg-black/20 font-mono font-bold">
-                      {staffBillsCount}
-                    </span>
-                  </button>
-                </div>
-
-                {/* Metrics & Total Due */}
-                <div className="flex items-center space-x-3 text-xs text-slate-400">
-                  <span>
-                    Showing <strong className="text-white">{sortedAllBills.length}</strong> bill{sortedAllBills.length === 1 ? '' : 's'}
-                  </span>
-                  <span>•</span>
-                  <span>
-                    Total Balance Due: <strong className="text-amber-400 font-mono text-sm">{formatCurrency(allBillsTotalDueCents, currency)}</strong>
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            {/* Bills List */}
-            {allLoading ? (
-              <div className="flex items-center justify-center h-48 text-slate-400 text-sm">
-                Loading all unpaid bills...
-              </div>
-            ) : sortedAllBills.length === 0 ? (
-              <div className="p-12 text-center bg-slate-900/60 rounded-2xl border border-slate-800/80">
-                <CheckCircle className="w-12 h-12 text-emerald-400 mx-auto mb-3" />
-                <h3 className="text-lg font-bold text-white">All Bills Clear!</h3>
-                <p className="text-sm text-slate-400 mt-1">
-                  {allSearchTerm
-                    ? `No unpaid bills match your search "${allSearchTerm}".`
-                    : 'There are no outstanding unpaid or hold bills at this time.'}
-                </p>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {sortedAllBills.map((bill) => {
-                  const isExpanded = !!expandedAllBillIds[bill._id];
-                  const isCustomer = bill.tabType === 'CUSTOMER' || (!bill.tabType && bill.customerName);
-                  const isRoom = bill.tabType === 'ROOM' || bill.roomNumber;
-                  const isStaff = bill.tabType === 'STAFF' || bill.staffMemberId;
-
-                  const holderTitle = isCustomer 
-                    ? (bill.customerName || 'Unnamed Customer')
-                    : isRoom 
-                    ? `Room ${bill.roomNumber}${bill.guestName ? ` - ${bill.guestName}` : ''}`
-                    : (bill.staffNameSnapshot || 'Staff Tab');
-
-                  const dateObj = new Date(bill.createdAt);
-                  const dateStr = dateObj.toLocaleDateString();
-                  const timeStr = dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-
-                  return (
-                    <div
-                      key={bill._id}
-                      className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden transition shadow-sm hover:border-slate-750"
-                    >
-                      {/* Row Header */}
-                      <div
-                        onClick={() => toggleAllBillAccordion(bill._id)}
-                        className="p-4 sm:p-5 flex items-center justify-between cursor-pointer hover:bg-slate-850 transition select-none flex-wrap gap-4"
-                      >
-                        <div className="flex items-center space-x-3.5">
-                          <div className="p-2.5 rounded-xl bg-amber-500/10 text-amber-400 border border-amber-500/20">
-                            {isExpanded ? <ChevronDown className="w-5 h-5" /> : <ChevronRight className="w-5 h-5" />}
-                          </div>
-                          <div>
-                            <div className="flex items-center space-x-2 flex-wrap gap-y-1">
-                              {isCustomer && (
-                                <span className="px-2.5 py-0.5 rounded-full text-xs font-extrabold uppercase border bg-blue-500/10 text-blue-400 border-blue-500/30 flex items-center space-x-1">
-                                  <UserCheck className="w-3 h-3" />
-                                  <span>Customer Bill</span>
-                                </span>
-                              )}
-                              {isRoom && (
-                                <span className="px-2.5 py-0.5 rounded-full text-xs font-extrabold uppercase border bg-orange-500/10 text-orange-400 border-orange-500/30 flex items-center space-x-1">
-                                  <BedDouble className="w-3 h-3" />
-                                  <span>Room Bill</span>
-                                </span>
-                              )}
-                              {isStaff && (
-                                <span className="px-2.5 py-0.5 rounded-full text-xs font-extrabold uppercase border bg-purple-500/10 text-purple-400 border-purple-500/30 flex items-center space-x-1">
-                                  <Users className="w-3 h-3" />
-                                  <span>Staff Tab</span>
-                                </span>
-                              )}
-                              <h2 className="text-base sm:text-lg font-extrabold text-white">
-                                {holderTitle}
-                              </h2>
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleViewTxnDetails(bill);
-                                }}
-                                className="px-2.5 py-0.5 rounded-md font-mono text-xs font-bold bg-amber-500/10 hover:bg-amber-500/25 text-amber-400 hover:text-amber-300 border border-amber-500/30 transition flex items-center space-x-1 cursor-pointer"
-                                title="Click to audit and view full transaction details"
-                              >
-                                <span>{bill.txnNumber}</span>
-                                <Eye className="w-3 h-3 text-amber-400" />
-                              </button>
-                            </div>
-
-                            <div className="text-xs text-slate-400 mt-1 flex items-center space-x-3 flex-wrap gap-y-1">
-                              <span>Held on {dateStr} at {timeStr}</span>
-                              <span>•</span>
-                              <span>Cashier: <strong className="text-slate-300">{bill.cashierNameSnapshot}</strong></span>
-                              <span>•</span>
-                              <span>{bill.items?.reduce((acc, it) => acc + (it.quantity || 1), 0) || bill.items?.length || 0} items on hold</span>
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="flex items-center space-x-3">
-                          <div className="text-right">
-                            <div className="text-xs text-slate-400 font-medium">Balance Due</div>
-                            <div className="text-lg sm:text-xl font-black text-amber-400 font-mono">
-                              {formatCurrency(bill.grandTotalInCents, currency)}
-                            </div>
-                          </div>
-
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleViewTxnDetails(bill);
-                            }}
-                            className="px-3.5 py-2.5 bg-slate-800 hover:bg-slate-750 text-slate-200 hover:text-amber-400 active:scale-95 font-bold text-xs sm:text-sm rounded-xl border border-slate-700 hover:border-amber-500/30 transition flex items-center space-x-1.5 cursor-pointer shadow-sm"
-                            title="Audit transaction and view full ticket details"
-                          >
-                            <Eye className="w-4 h-4" />
-                            <span>Audit Txn</span>
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleOpenSettleForBill(bill);
-                            }}
-                            className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-bold text-xs sm:text-sm rounded-xl shadow-lg shadow-emerald-600/20 transition flex items-center space-x-1.5 cursor-pointer"
-                          >
-                            <DollarSign className="w-4 h-4" />
-                            <span>Settle Bill</span>
-                          </button>
-                        </div>
-                      </div>
-
-                      {/* Accordion Content: Items list */}
-                      {isExpanded && (
-                        <div className="border-t border-slate-800/80 bg-slate-950/40 p-4 sm:p-5 space-y-4">
-                          <div className="overflow-x-auto">
-                            <table className="w-full text-left text-sm">
-                              <thead>
-                                <tr className="border-b border-slate-800 text-xs font-bold uppercase tracking-wider text-slate-400">
-                                  <th className="pb-3 pl-2">Product</th>
-                                  <th className="pb-3 px-3">Unit Price</th>
-                                  <th className="pb-3 px-3 text-center">Qty on Hold</th>
-                                  <th className="pb-3 px-3 text-right">Discounts</th>
-                                  <th className="pb-3 px-3 text-right">Subtotal</th>
-                                  <th className="pb-3 pr-2 text-right">Time</th>
-                                </tr>
-                              </thead>
-                              <tbody className="divide-y divide-slate-800/50 text-slate-300">
-                                {bill.items?.map((item, idx) => (
-                                  <tr key={item._id || idx} className="hover:bg-slate-850/50 transition">
-                                    <td className="py-3 pl-2 font-medium text-white">
-                                      <div className="font-bold">{item.productNameSnapshot}</div>
-                                      {item.skuSnapshot && (
-                                        <div className="text-xs text-slate-500 font-mono">{item.skuSnapshot}</div>
-                                      )}
-                                    </td>
-                                    <td className="py-3 px-3 font-mono text-slate-400 text-xs sm:text-sm">
-                                      {formatCurrency(item.unitPriceInCents, currency)}
-                                    </td>
-                                    <td className="py-3 px-3 text-center">
-                                      <span className="px-2.5 py-1 rounded-lg bg-amber-500/10 text-amber-300 font-mono font-bold text-xs border border-amber-500/20">
-                                        {item.quantity} on hold
-                                      </span>
-                                    </td>
-                                    <td className="py-3 px-3 text-right text-xs sm:text-sm font-mono text-emerald-400">
-                                      {item.lineDiscountInCents > 0 ? `-${formatCurrency(item.lineDiscountInCents, currency)}` : '—'}
-                                    </td>
-                                    <td className="py-3 px-3 text-right font-bold text-white font-mono text-xs sm:text-sm">
-                                      {formatCurrency(item.finalLineTotalInCents, currency)}
-                                    </td>
-                                    <td className="py-3 pr-2 text-right text-xs text-slate-400 font-mono">
-                                      {new Date(item.takenAt || bill.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                    </td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
-                          </div>
-
-                          {bill.notes && (
-                            <div className="p-3 bg-slate-900 border border-slate-800 rounded-xl text-xs text-slate-300 flex items-center space-x-2">
-                              <span className="text-amber-400 font-bold">Notes:</span>
-                              <span>{bill.notes}</span>
-                            </div>
-                          )}
-
-                          {/* Audit & Transaction Action Footer Bar */}
-                          <div className="pt-3 border-t border-slate-800/80 flex items-center justify-between flex-wrap gap-3">
-                            <div className="text-xs text-slate-400 flex items-center space-x-3 flex-wrap">
-                              <span>Cashier: <strong className="text-white">{bill.cashierNameSnapshot}</strong></span>
-                              <span>•</span>
-                              <span>Timestamp: <strong className="text-slate-300">{dateStr} at {timeStr}</strong></span>
-                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-blue-500/10 text-blue-400 border border-blue-500/30">
-                                Status: {bill.status}
-                              </span>
-                            </div>
-
-                            <button
-                              type="button"
-                              onClick={() => handleViewTxnDetails(bill)}
-                              className="px-3.5 py-2 bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 hover:text-amber-200 border border-amber-500/30 rounded-xl text-xs font-bold transition flex items-center space-x-1.5 cursor-pointer active:scale-95 shadow-sm"
-                              title="Audit full transaction, print ticket, inspect discounts and line items"
-                            >
-                              <Eye className="w-4 h-4 text-amber-400" />
-                              <span>Audit & View Details</span>
-                            </button>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
+          <AllBillsView
+            allSearchTerm={allSearchTerm}
+            setAllSearchTerm={setAllSearchTerm}
+            allBillTypeFilter={allBillTypeFilter}
+            setAllBillTypeFilter={setAllBillTypeFilter}
+            allSortBy={allSortBy}
+            setAllSortBy={setAllSortBy}
+            allBills={allBills}
+            allLoading={allLoading}
+            expandedAllBillIds={expandedAllBillIds}
+            toggleAllBillAccordion={toggleAllBillAccordion}
+            onViewTxnDetails={handleViewTxnDetails}
+            onOpenSettleForBill={handleOpenSettleForBill}
+            currency={currency}
+          />
         )}
 
-        {/* View 0: Consolidated Customer Bills */}
+        {/* VIEW 1: CONSOLIDATED CUSTOMER BILLS */}
         {viewMode === 'by_customer' && (
-          <div className="space-y-4">
-            {/* Search Input Box */}
-            <div className="space-y-3">
-              <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
-                  <Search className="w-5 h-5 text-slate-400" />
-                </div>
-                <input
-                  type="text"
-                  value={customerSearchTerm}
-                  onChange={(e) => setCustomerSearchTerm(e.target.value)}
-                  placeholder="Search by customer name or product..."
-                  className="w-full pl-11 pr-10 py-3.5 bg-slate-900 border border-slate-700 rounded-2xl text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500 text-sm shadow-inner transition"
-                />
-                {customerSearchTerm && (
-                  <button
-                    type="button"
-                    onClick={() => setCustomerSearchTerm('')}
-                    className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-slate-400 hover:text-white"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                )}
-              </div>
-
-              {/* Context Summary Bar */}
-              <div className="flex flex-wrap items-center justify-between text-xs text-slate-400 px-1 gap-2">
-                <div>
-                  Showing <strong className="text-white">{customerTabs.length}</strong> active customer bill{customerTabs.length === 1 ? '' : 's'}
-                  {customerSearchTerm && <span> matching &ldquo;<span className="text-amber-400 font-semibold">{customerSearchTerm}</span>&rdquo;</span>}
-                </div>
-                <div className="flex items-center space-x-3">
-                  <span>
-                    Total Customer Balance Due: <strong className="text-amber-400 font-mono text-sm">{formatCurrency(totalCustomerOwedCents, currency)}</strong>
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            {/* Customer List Content */}
-            {customerLoading ? (
-              <div className="flex items-center justify-center h-48 text-slate-400 text-sm">
-                Loading customer bills...
-              </div>
-            ) : customerTabs.length === 0 ? (
-              <div className="p-12 text-center bg-slate-900/60 rounded-2xl border border-slate-800/80">
-                <CheckCircle className="w-12 h-12 text-emerald-400 mx-auto mb-3" />
-                <h3 className="text-lg font-bold text-white">All Customer Bills Clear!</h3>
-                <p className="text-sm text-slate-400 mt-1">
-                  {customerSearchTerm
-                    ? `No open customer bills match "${customerSearchTerm}".`
-                    : 'There are no outstanding unpaid customer bills at this time.'}
-                </p>
-              </div>
-            ) : (
-              <div className="space-y-4">
-                {customerTabs.map((tab) => {
-                  const customerKey = tab.customerId || tab.customerName;
-                  const isExpanded = !!expandedCustomerKeys[customerKey];
-
-                  return (
-                    <div
-                      key={customerKey}
-                      className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden transition shadow-sm hover:border-slate-750"
-                    >
-                      {/* Customer Row Header */}
-                      <div
-                        onClick={() => toggleCustomerAccordion(customerKey)}
-                        className="p-4 sm:p-5 flex items-center justify-between cursor-pointer hover:bg-slate-850 transition select-none flex-wrap gap-4"
-                      >
-                        <div className="flex items-center space-x-3.5">
-                          <div className="p-2.5 rounded-xl bg-amber-500/10 text-amber-400 border border-amber-500/20">
-                            {isExpanded ? <ChevronDown className="w-5 h-5" /> : <ChevronRight className="w-5 h-5" />}
-                          </div>
-                          <div>
-                            <div className="flex items-center space-x-2 flex-wrap gap-y-1">
-                              <span className="px-2.5 py-0.5 rounded-full text-xs font-extrabold uppercase border bg-blue-500/10 text-blue-400 border-blue-500/30">
-                                Customer
-                              </span>
-                              <h2 className="text-base sm:text-lg font-extrabold text-white">
-                                {tab.customerName || 'Unnamed Customer'}
-                              </h2>
-                            </div>
-                            <div className="text-xs text-slate-400 mt-1 flex items-center space-x-3">
-                              <span>{tab.itemCount || 0} total items</span>
-                              <span>•</span>
-                              <span>{tab.consolidatedItems?.length || 0} distinct products</span>
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="flex items-center space-x-3">
-                          <div className="text-right">
-                            <div className="text-xs text-slate-400 font-medium">Balance Due</div>
-                            <div className="text-lg sm:text-xl font-black text-amber-400 font-mono">
-                              {formatCurrency(tab.totalOwedInCents, currency)}
-                            </div>
-                          </div>
-
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleOpenPrintCustomerBill(tab);
-                            }}
-                            className="px-3.5 py-2.5 bg-slate-800 hover:bg-slate-750 text-slate-200 hover:text-amber-400 active:scale-95 font-bold text-xs sm:text-sm rounded-xl border border-slate-700 hover:border-amber-500/30 transition flex items-center space-x-1.5 cursor-pointer shadow-sm"
-                            title="Print all bills / customer statement"
-                          >
-                            <Printer className="w-4 h-4" />
-                            <span className="hidden sm:inline">Print Bill</span>
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              openCustomerSettleModal(tab.customerName);
-                            }}
-                            className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-bold text-xs sm:text-sm rounded-xl shadow-lg shadow-emerald-600/20 transition flex items-center space-x-1.5"
-                          >
-                            <DollarSign className="w-4 h-4" />
-                            <span>Settle Bill</span>
-                          </button>
-                        </div>
-                      </div>
-
-                      {/* Accordion Content: Consolidated Items */}
-                      {isExpanded && (
-                        <div className="border-t border-slate-800/80 bg-slate-950/40 p-4 sm:p-5 space-y-4">
-                          <div className="overflow-x-auto">
-                            <table className="w-full text-left text-sm">
-                              <thead>
-                                <tr className="border-b border-slate-800 text-xs font-bold uppercase tracking-wider text-slate-400">
-                                  <th className="pb-3 pl-2">Product</th>
-                                  <th className="pb-3 px-3">Unit Price</th>
-                                  <th className="pb-3 px-3 text-center">Qty</th>
-                                  <th className="pb-3 px-3 text-right">Discounts</th>
-                                  <th className="pb-3 px-3 text-right">Subtotal</th>
-                                  <th className="pb-3 pr-2 text-right">Audit History</th>
-                                </tr>
-                              </thead>
-                              <tbody className="divide-y divide-slate-800/50 text-slate-300">
-                                {tab.consolidatedItems?.map((item) => {
-                                  const itemHistoryKey = `${customerKey}_${item.productId}`;
-                                  const showHistory = !!expandedCustomerItemKeys[itemHistoryKey];
-
-                                  return (
-                                    <React.Fragment key={item.productId}>
-                                      <tr className="hover:bg-slate-850/50 transition">
-                                        <td className="py-3 pl-2 font-medium text-white">
-                                          <div>{item.productName}</div>
-                                          {item.categoryName && (
-                                            <span className="text-[10px] text-slate-500 uppercase tracking-wider">
-                                              {item.categoryName}
-                                            </span>
-                                          )}
-                                        </td>
-                                        <td className="py-3 px-3 font-mono text-xs">
-                                          {formatCurrency(item.unitPriceInCents, currency)}
-                                        </td>
-                                        <td className="py-3 px-3 text-center">
-                                          <span className="px-2.5 py-1 rounded-lg bg-slate-800 font-bold text-white text-xs border border-slate-700">
-                                            {item.totalQuantity}
-                                          </span>
-                                        </td>
-                                        <td className="py-3 px-3 text-right text-xs">
-                                          {item.totalDiscountInCents > 0 ? (
-                                            <span className="text-emerald-400 font-medium">
-                                              -{formatCurrency(item.totalDiscountInCents, currency)}
-                                            </span>
-                                          ) : (
-                                            <span className="text-slate-600">—</span>
-                                          )}
-                                        </td>
-                                        <td className="py-3 px-3 text-right font-mono font-bold text-white">
-                                          {formatCurrency(item.totalAmountInCents, currency)}
-                                        </td>
-                                        <td className="py-3 pr-2 text-right">
-                                          <button
-                                            type="button"
-                                            onClick={() => toggleCustomerItemHistory(itemHistoryKey)}
-                                            className="inline-flex items-center space-x-1 text-xs text-amber-400 hover:text-amber-300 transition"
-                                          >
-                                            <Clock className="w-3.5 h-3.5" />
-                                            <span>{item.history?.length || 0} order{item.history?.length === 1 ? '' : 's'}</span>
-                                            {showHistory ? (
-                                              <ChevronDown className="w-3.5 h-3.5" />
-                                            ) : (
-                                              <ChevronRight className="w-3.5 h-3.5" />
-                                            )}
-                                          </button>
-                                        </td>
-                                      </tr>
-
-                                      {/* Nested Audit History */}
-                                      {showHistory && item.history && (
-                                        <tr>
-                                          <td colSpan={6} className="bg-slate-900/90 p-3 rounded-xl">
-                                            <div className="space-y-2 text-xs">
-                                              <div className="font-bold text-slate-400 uppercase tracking-wider text-[10px]">
-                                                Order Occurrence Log
-                                              </div>
-                                              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
-                                                {item.history.map((occ, oIdx) => (
-                                                  <div
-                                                    key={occ.transactionId + '_' + oIdx}
-                                                    onClick={() => handleViewTxnDetails(occ.transactionId)}
-                                                    className="p-2.5 bg-slate-850 hover:bg-slate-800 rounded-xl border border-slate-800 hover:border-amber-500/50 space-y-1 cursor-pointer transition select-none group"
-                                                    title="Click to view full transaction details"
-                                                  >
-                                                    <div className="flex justify-between items-center">
-                                                      <span className="font-mono font-bold text-amber-400 text-[11px] group-hover:text-amber-300 flex items-center space-x-1">
-                                                        <span>{occ.txnNumber}</span>
-                                                        <Eye className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity text-amber-400" />
-                                                      </span>
-                                                      <span className="text-[10px] text-slate-400">
-                                                        Qty: <strong className="text-white">{occ.quantity}</strong>
-                                                      </span>
-                                                    </div>
-                                                    <div className="text-[10px] text-slate-400">
-                                                      {new Date(occ.takenAt).toLocaleDateString()} {new Date(occ.takenAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                                    </div>
-                                                    <div className="text-[10px] text-slate-500 flex justify-between items-center">
-                                                      <span>Cashier: <span className="text-slate-300">{occ.cashierName || 'POS Staff'}</span></span>
-                                                      <span className="text-[9px] text-amber-400/80 font-medium group-hover:underline">View Details &rarr;</span>
-                                                    </div>
-                                                  </div>
-                                                ))}
-                                              </div>
-                                            </div>
-                                          </td>
-                                        </tr>
-                                      )}
-                                    </React.Fragment>
-                                  );
-                                })}
-                              </tbody>
-                            </table>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
+          <CustomerTabsView
+            customerSearchTerm={customerSearchTerm}
+            setCustomerSearchTerm={setCustomerSearchTerm}
+            customerTabs={customerTabs}
+            customerLoading={customerLoading}
+            totalCustomerOwedCents={totalCustomerOwedCents}
+            expandedCustomerKeys={expandedCustomerKeys}
+            toggleCustomerAccordion={toggleCustomerAccordion}
+            expandedCustomerItemKeys={expandedCustomerItemKeys}
+            toggleCustomerItemHistory={toggleCustomerItemHistory}
+            onOpenPrintCustomerBill={handleOpenPrintCustomerBill}
+            onOpenCustomerSettleModal={openCustomerSettleModal}
+            onViewTxnDetails={handleViewTxnDetails}
+            currency={currency}
+          />
         )}
 
-        {/* View 1: Consolidated Staff Accordion List */}
+        {/* VIEW 2: CONSOLIDATED STAFF TABS */}
         {viewMode === 'by_staff' && (
-          <div>
-            {loading ? (
-              <div className="flex items-center justify-center h-48 text-slate-400 text-sm">
-                Loading consolidated staff tabs...
-              </div>
-            ) : tabs.length === 0 ? (
-              <div className="p-12 text-center bg-slate-900/60 rounded-2xl border border-slate-800/80">
-                <CheckCircle className="w-12 h-12 text-emerald-400 mx-auto mb-3" />
-                <h3 className="text-lg font-bold text-white">All Staff Tabs Clear!</h3>
-                <p className="text-sm text-slate-400 mt-1">There are no outstanding unpaid tabs at this time.</p>
-              </div>
-            ) : (
-              <div className="space-y-4">
-                {tabs.map((tab) => {
-                  const isExpanded = expandedStaffId === tab._id;
-
-                  return (
-                    <div
-                      key={tab._id}
-                      className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden transition shadow-sm"
-                    >
-                      {/* Staff Row Header */}
-                      <div
-                        onClick={() => toggleStaffAccordion(tab._id)}
-                        className="p-4 sm:p-5 flex items-center justify-between cursor-pointer hover:bg-slate-850 transition select-none"
-                      >
-                        <div className="flex items-center space-x-3">
-                          <div className="p-2 rounded-xl bg-amber-500/10 text-amber-400">
-                            {isExpanded ? <ChevronDown className="w-5 h-5" /> : <ChevronRight className="w-5 h-5" />}
-                          </div>
-                          <div>
-                            <h2 className="text-base sm:text-lg font-bold text-white">{tab.staffName}</h2>
-                            <span className="text-xs text-slate-400">
-                              {tab.consolidatedItems?.length || 0} distinct items consumed
-                            </span>
-                          </div>
-                        </div>
-
-                        <div className="flex items-center space-x-4">
-                          <div className="text-right">
-                            <div className="text-xs text-slate-400 font-medium">Balance Due</div>
-                            <div className="text-lg sm:text-xl font-extrabold text-amber-400 font-mono">
-                              {formatCurrency(tab.totalOwedInCents, currency)}
-                            </div>
-                          </div>
-
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              openSettleModal(tab._id, tab.staffName);
-                            }}
-                            className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-bold text-xs sm:text-sm rounded-xl shadow-md transition flex items-center space-x-1.5"
-                          >
-                            <DollarSign className="w-4 h-4" />
-                            <span>Settle Tab</span>
-                          </button>
-                        </div>
-                      </div>
-
-                      {/* Accordion Content: Consolidated Items */}
-                      {isExpanded && (
-                        <div className="border-t border-slate-800 p-4 sm:p-5 bg-slate-950/60 space-y-3">
-                          <div className="text-xs uppercase tracking-wider font-bold text-slate-400 flex items-center space-x-2">
-                            <Layers className="w-4 h-4 text-amber-400" />
-                            <span>Consolidated Itemized Breakdown</span>
-                          </div>
-
-                          <div className="divide-y divide-slate-800 border border-slate-800 rounded-xl overflow-hidden bg-slate-900/90">
-                            {tab.consolidatedItems.map((item, index) => {
-                              const itemKey = `${tab._id}_${item.productId || index}`;
-                              const isHistoryOpen = expandedItemKeys[itemKey];
-
-                              return (
-                                <div key={itemKey} className="p-3.5 space-y-2">
-                                  <div className="flex items-center justify-between">
-                                    <div className="flex items-center space-x-3">
-                                      <button
-                                        type="button"
-                                        onClick={() => toggleItemHistory(itemKey)}
-                                        className="p-1 rounded bg-slate-800 hover:bg-slate-750 text-slate-300 transition"
-                                        title="Inspect occurrence timestamps"
-                                      >
-                                        {isHistoryOpen ? (
-                                          <ChevronDown className="w-4 h-4 text-amber-400" />
-                                        ) : (
-                                          <ChevronRight className="w-4 h-4 text-slate-400" />
-                                        )}
-                                      </button>
-
-                                      <div>
-                                        <div className="text-sm font-bold text-white">{item.productName}</div>
-                                        <div className="text-xs text-slate-400">
-                                          {item.totalQuantity}x @ {formatCurrency(item.unitPriceInCents, currency)}
-                                          {item.totalDiscountInCents > 0 && (
-                                            <span className="text-emerald-400 ml-2">
-                                              (Disc: -{formatCurrency(item.totalDiscountInCents, currency)})
-                                            </span>
-                                          )}
-                                        </div>
-                                      </div>
-                                    </div>
-
-                                    <div className="text-right font-mono font-bold text-white text-sm">
-                                      {formatCurrency(item.totalAmountInCents, currency)}
-                                    </div>
-                                  </div>
-
-                                  {/* Nested Occurrence Timestamps (Audit Trail) */}
-                                  {isHistoryOpen && (
-                                    <div className="ml-8 mt-2 p-3 bg-slate-950/80 rounded-lg border border-slate-800/80 space-y-1.5 text-xs text-slate-300">
-                                      <div className="font-semibold text-[11px] text-amber-400/90 mb-1 flex items-center space-x-1">
-                                        <Clock className="w-3.5 h-3.5" />
-                                        <span>Individual Occurrences & Timestamps:</span>
-                                      </div>
-                                      {item.history.map((hist, hIdx) => {
-                                        const dateObj = new Date(hist.takenAt);
-                                        const dateStr = dateObj.toLocaleDateString();
-                                        const timeStr = dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-
-                                        return (
-                                           <div
-                                            key={hIdx}
-                                            onClick={() => handleViewTxnDetails(hist.transactionId)}
-                                            className="flex items-center justify-between py-1.5 px-2 rounded-lg border-b border-slate-800/60 last:border-0 hover:bg-slate-900 hover:text-white cursor-pointer transition select-none group"
-                                            title="Click to view full transaction details"
-                                          >
-                                            <span className="flex items-center space-x-2">
-                                              <span className="font-mono text-amber-400 font-bold group-hover:underline flex items-center space-x-1">
-                                                <span>{hist.txnNumber}</span>
-                                                <Eye className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity" />
-                                              </span>
-                                              <span className="text-slate-400">•</span>
-                                              <span>{dateStr} at {timeStr}</span>
-                                              <span className="text-slate-400">({hist.quantity}x)</span>
-                                            </span>
-                                            <span className="text-slate-400 text-[11px]">
-                                              Cashier: <strong>{hist.cashierName}</strong>
-                                            </span>
-                                          </div>
-                                        );
-                                      })}
-                                    </div>
-                                  )}
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
+          <StaffTabsView
+            tabs={tabs}
+            loading={loading}
+            expandedStaffId={expandedStaffId}
+            toggleStaffAccordion={toggleStaffAccordion}
+            expandedItemKeys={expandedItemKeys}
+            toggleItemHistory={toggleItemHistory}
+            onOpenSettleModal={openSettleModal}
+            onViewTxnDetails={handleViewTxnDetails}
+            currency={currency}
+          />
         )}
 
-        {/* View 2: Consolidated Customer Room Bills */}
+        {/* VIEW 3: CONSOLIDATED ROOM BILLS */}
         {viewMode === 'by_room' && (
-          <div className="space-y-4">
-            {/* Search Input Box & Wing Filters */}
-            <div className="space-y-3">
-              <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
-                  <Search className="w-5 h-5 text-slate-400" />
-                </div>
-                <input
-                  type="text"
-                  value={roomSearchTerm}
-                  onChange={(e) => setRoomSearchTerm(e.target.value)}
-                  placeholder="Search by room number (e.g., B104, D105, V101, H102), guest name, or product..."
-                  className="w-full pl-11 pr-10 py-3.5 bg-slate-900 border border-slate-700 rounded-2xl text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500 text-sm shadow-inner transition"
-                />
-                {roomSearchTerm && (
-                  <button
-                    type="button"
-                    onClick={() => setRoomSearchTerm('')}
-                    className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-slate-400 hover:text-white"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                )}
-              </div>
-
-              {/* Wing Filter Pills */}
-              <div className="flex items-center space-x-2 overflow-x-auto pb-1 scrollbar-none">
-                <span className="text-xs font-semibold text-slate-400 shrink-0">Filter Wing:</span>
-                {ROOM_WINGS.map((wing) => {
-                  const isActive = selectedWing === wing.id;
-                  return (
-                    <button
-                      key={wing.id}
-                      type="button"
-                      onClick={() => setSelectedWing(wing.id)}
-                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition shrink-0 border ${
-                        isActive
-                          ? 'bg-amber-500 text-black border-amber-500 shadow-sm'
-                          : 'bg-slate-900 text-slate-300 border-slate-800 hover:bg-slate-800 hover:text-white'
-                      }`}
-                    >
-                      {wing.label}
-                    </button>
-                  );
-                })}
-              </div>
-
-              {/* Context Summary Bar */}
-              <div className="flex flex-wrap items-center justify-between text-xs text-slate-400 px-1 gap-2">
-                <div>
-                  Showing <strong className="text-white">{filteredRoomTabs.length}</strong> active room tab{filteredRoomTabs.length === 1 ? '' : 's'}
-                  {roomSearchTerm && <span> matching &ldquo;<span className="text-amber-400 font-semibold">{roomSearchTerm}</span>&rdquo;</span>}
-                </div>
-                <div className="flex items-center space-x-3">
-                  <span>
-                    Total Room Balance Due: <strong className="text-amber-400 font-mono text-sm">{formatCurrency(filteredRoomTabs.reduce((acc, r) => acc + r.totalOwedInCents, 0), currency)}</strong>
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            {/* Room List Content */}
-            {roomLoading ? (
-              <div className="flex items-center justify-center h-48 text-slate-400 text-sm">
-                Loading customer room bills...
-              </div>
-            ) : filteredRoomTabs.length === 0 ? (
-              <div className="p-12 text-center bg-slate-900/60 rounded-2xl border border-slate-800/80">
-                <CheckCircle className="w-12 h-12 text-emerald-400 mx-auto mb-3" />
-                <h3 className="text-lg font-bold text-white">All Customer Room Bills Clear!</h3>
-                <p className="text-sm text-slate-400 mt-1">
-                  {roomSearchTerm
-                    ? `No open customer bills match "${roomSearchTerm}".`
-                    : 'There are no outstanding customer room tabs in this wing at this time.'}
-                </p>
-              </div>
-            ) : (
-              <div className="space-y-4">
-                {filteredRoomTabs.map((tab) => {
-                  const roomKey = `${tab.roomNumber}_${tab.normalizedGuestName || tab.guestName || ''}`;
-                  const isExpanded = !!expandedRoomKeys[roomKey];
-                  const dorm = tab.isCombinedDorm || isDormRoom(tab.roomNumber);
-                  const roomMeta = getRoomByNumber(tab.roomNumber);
-                  const wingChar = tab.roomNumber ? tab.roomNumber.charAt(0).toUpperCase() : 'OTHER';
-
-                  const wingColors = {
-                    B: 'bg-blue-500/10 text-blue-400 border-blue-500/30',
-                    V: 'bg-purple-500/10 text-purple-400 border-purple-500/30',
-                    H: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30',
-                    D: 'bg-orange-500/10 text-orange-400 border-orange-500/30',
-                    S: 'bg-rose-500/10 text-rose-400 border-rose-500/30'
-                  };
-                  const badgeStyle = wingColors[wingChar] || 'bg-slate-800 text-slate-300 border-slate-700';
-
-                  return (
-                    <div
-                      key={roomKey}
-                      className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden transition shadow-sm hover:border-slate-750"
-                    >
-                      {/* Room Row Header */}
-                      <div
-                        onClick={() => toggleRoomAccordion(roomKey)}
-                        className="p-4 sm:p-5 flex items-center justify-between cursor-pointer hover:bg-slate-850 transition select-none flex-wrap gap-4"
-                      >
-                        <div className="flex items-center space-x-3.5">
-                          <div className="p-2.5 rounded-xl bg-amber-500/10 text-amber-400 border border-amber-500/20">
-                            {isExpanded ? <ChevronDown className="w-5 h-5" /> : <ChevronRight className="w-5 h-5" />}
-                          </div>
-                          <div>
-                            <div className="flex items-center space-x-2 flex-wrap gap-y-1">
-                              <span className={`px-2.5 py-0.5 rounded-full text-xs font-extrabold uppercase border ${badgeStyle}`}>
-                                {tab.roomNumber}
-                              </span>
-                              <h2 className="text-base sm:text-lg font-extrabold text-white">
-                                {tab.isCombinedDorm
-                                  ? `Dorm (${tab.roomNumber})`
-                                  : `${roomMeta?.type || 'Room'} ${tab.roomNumber}`}
-                              </h2>
-                              {dorm && (
-                                <span className="px-2 py-0.5 rounded-md text-[11px] font-bold bg-orange-500/15 text-orange-400 border border-orange-500/30">
-                                  {tab.isCombinedDorm && tab.roomNumbers?.length > 1
-                                    ? 'Combined Dorm (D105 & D106)'
-                                    : 'Dorm (6 Pax)'}
-                                </span>
-                              )}
-                              {tab.guestName && (
-                                <span className="px-2.5 py-0.5 rounded-md text-xs font-bold bg-slate-800 text-emerald-400 border border-slate-700 flex items-center space-x-1">
-                                  <UserCheck className="w-3.5 h-3.5 text-emerald-400" />
-                                  <span>Guest: {tab.guestName}</span>
-                                </span>
-                              )}
-                            </div>
-                            <span className="text-xs text-slate-400 block mt-1">
-                              {tab.consolidatedItems?.length || 0} distinct item{tab.consolidatedItems?.length === 1 ? '' : 's'} consumed ({tab.itemCount} units)
-                            </span>
-                          </div>
-                        </div>
-
-                        <div className="flex items-center space-x-3 sm:space-x-4">
-                          <div className="text-right">
-                            <div className="text-xs text-slate-400 font-medium">Balance Due</div>
-                            <div className="text-lg sm:text-xl font-extrabold text-amber-400 font-mono">
-                              {formatCurrency(tab.totalOwedInCents, currency)}
-                            </div>
-                          </div>
-
-                          {tab.guestName && (
-                            <button
-                              type="button"
-                              onClick={async (e) => {
-                                e.stopPropagation();
-                                try {
-                                  setPrintCustomerBillLoading(true);
-                                  const params = { guestName: tab.guestName };
-                                  if (Array.isArray(tab.roomNumbers) && tab.roomNumbers.length > 0) {
-                                    params.rooms = tab.roomNumbers.join(',');
-                                  }
-                                  const res = await axiosSecure.get(
-                                    `/api/tabs/rooms/${encodeURIComponent(tab.roomNumber)}/transactions`,
-                                    { params }
-                                  );
-                                  if (res.data?.success) {
-                                    const txns = res.data.data.transactions || [];
-                                    setPrintCustomerBillData({
-                                      customerName: `${tab.guestName} (${tab.roomNumber})`,
-                                      transactions: txns,
-                                      totalBalanceInCents: res.data.data.totalBalanceInCents || tab.totalOwedInCents,
-                                      initialFilter: 'UNPAID'
-                                    });
-                                  }
-                                } catch (err) {
-                                  console.error('Error opening print modal for room bill:', err);
-                                } finally {
-                                  setPrintCustomerBillLoading(false);
-                                }
-                              }}
-                              className="p-2 sm:px-3 sm:py-2 bg-slate-800 hover:bg-slate-750 text-slate-200 hover:text-amber-400 active:scale-95 font-bold text-xs sm:text-sm rounded-xl border border-slate-700 hover:border-amber-500/30 transition flex items-center space-x-1.5 cursor-pointer shadow-sm"
-                              title="Print consolidated room bill statement"
-                            >
-                              <Printer className="w-4 h-4" />
-                              <span className="hidden sm:inline">Print Bill</span>
-                            </button>
-                          )}
-
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              openRoomSettleModal(tab.roomNumber, tab.guestName, tab.roomNumbers);
-                            }}
-                            className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-bold text-xs sm:text-sm rounded-xl shadow-md transition flex items-center space-x-1.5 cursor-pointer"
-                          >
-                            <DollarSign className="w-4 h-4" />
-                            <span>Settle Room Bill</span>
-                          </button>
-                        </div>
-                      </div>
-
-                      {/* Accordion Content: Consolidated Items */}
-                      {isExpanded && (
-                        <div className="border-t border-slate-800 p-4 sm:p-5 bg-slate-950/60 space-y-3">
-                          <div className="text-xs uppercase tracking-wider font-bold text-slate-400 flex items-center space-x-2">
-                            <Layers className="w-4 h-4 text-amber-400" />
-                            <span>Consolidated Room Consumption</span>
-                          </div>
-
-                          <div className="divide-y divide-slate-800 border border-slate-800 rounded-xl overflow-hidden bg-slate-900/90">
-                            {tab.consolidatedItems.map((item, index) => {
-                              const auditKey = `${roomKey}_${item.productId || index}`;
-                              const isAuditOpen = !!expandedRoomItemKeys[auditKey];
-
-                              return (
-                                <div key={index} className="p-3.5 sm:p-4 space-y-2">
-                                  <div className="flex items-center justify-between">
-                                    <div>
-                                      <div className="font-bold text-sm text-white flex items-center space-x-2">
-                                        <span>{item.productName}</span>
-                                        {item.categoryName && (
-                                          <span className="text-[10px] uppercase font-semibold px-2 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700">
-                                            {item.categoryName}
-                                          </span>
-                                        )}
-                                      </div>
-                                      <div className="text-xs text-slate-400 font-mono mt-0.5">
-                                        Unit: {formatCurrency(item.unitPriceInCents, currency)}
-                                      </div>
-                                    </div>
-
-                                    <div className="flex items-center space-x-4">
-                                      <div className="text-right">
-                                        <div className="text-xs text-slate-400 font-bold font-mono">
-                                          Qty: <span className="text-white text-sm">{item.totalQuantity}</span>
-                                        </div>
-                                        <div className="text-sm font-extrabold text-amber-400 font-mono">
-                                          {formatCurrency(item.totalAmountInCents, currency)}
-                                        </div>
-                                      </div>
-
-                                      {/* Occurrence Audit Toggle */}
-                                      {item.history && item.history.length > 0 && (
-                                        <button
-                                          type="button"
-                                          onClick={() => toggleRoomItemHistory(auditKey)}
-                                          className={`p-2 rounded-lg text-xs font-semibold flex items-center space-x-1 transition border ${
-                                            isAuditOpen 
-                                              ? 'bg-amber-500/20 text-amber-300 border-amber-500/40' 
-                                              : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-white'
-                                          }`}
-                                          title="View discrete occurrences and audit timestamps"
-                                        >
-                                          <Clock className="w-3.5 h-3.5" />
-                                          <span className="hidden sm:inline">Audit ({item.history.length})</span>
-                                        </button>
-                                      )}
-                                    </div>
-                                  </div>
-
-                                  {/* Nested Occurrence Timestamps */}
-                                  {isAuditOpen && item.history && (
-                                    <div className="mt-2 p-3 bg-slate-950 rounded-xl border border-slate-800/80 space-y-1.5 text-xs text-slate-300">
-                                      <div className="font-semibold text-[11px] text-amber-400/90 mb-1 flex items-center space-x-1">
-                                        <Clock className="w-3.5 h-3.5" />
-                                        <span>Discrete Taking History & Audited Timestamps:</span>
-                                      </div>
-                                      {item.history.map((occ, oIdx) => {
-                                        const dateObj = new Date(occ.takenAt);
-                                        const dateStr = dateObj.toLocaleDateString();
-                                        const timeStr = dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-
-                                        return (
-                                           <div
-                                            key={oIdx}
-                                            onClick={() => handleViewTxnDetails(occ.transactionId)}
-                                            className="flex flex-col sm:flex-row sm:items-center justify-between py-1.5 px-2 rounded-lg border-b border-slate-850 last:border-0 gap-1 hover:bg-slate-900 cursor-pointer transition select-none group"
-                                            title="Click to view full transaction details"
-                                          >
-                                            <div className="flex items-center space-x-2 flex-wrap">
-                                              <span className="font-mono text-amber-400 font-bold group-hover:underline flex items-center space-x-1">
-                                                <span>{occ.txnNumber}</span>
-                                                <Eye className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity" />
-                                              </span>
-                                              {occ.roomNumber && (
-                                                <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-500/15 text-amber-300 border border-amber-500/30 font-mono">
-                                                  Room {occ.roomNumber}
-                                                </span>
-                                              )}
-                                              <span className="text-slate-500">•</span>
-                                              <span>{dateStr} at {timeStr}</span>
-                                              <span className="text-emerald-400 font-bold font-mono">({occ.quantity}x)</span>
-                                              {occ.notes && (
-                                                <span className="text-[11px] text-slate-400 italic">
-                                                  &ldquo;{occ.notes}&rdquo;
-                                                </span>
-                                              )}
-                                            </div>
-                                            <div className="text-slate-400 text-[11px]">
-                                              Cashier: <strong className="text-slate-200">{occ.cashierName || 'Operator'}</strong>
-                                            </div>
-                                          </div>
-                                        );
-                                      })}
-                                    </div>
-                                  )}
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
+          <RoomTabsView
+            roomSearchTerm={roomSearchTerm}
+            setRoomSearchTerm={setRoomSearchTerm}
+            selectedWing={selectedWing}
+            setSelectedWing={setSelectedWing}
+            roomTabs={roomTabs}
+            roomLoading={roomLoading}
+            expandedRoomKeys={expandedRoomKeys}
+            toggleRoomAccordion={toggleRoomAccordion}
+            expandedRoomItemKeys={expandedRoomItemKeys}
+            toggleRoomItemHistory={toggleRoomItemHistory}
+            onOpenRoomSettleModal={openRoomSettleModal}
+            onOpenPrintRoomBill={handleOpenPrintRoomBill}
+            onViewTxnDetails={handleViewTxnDetails}
+            currency={currency}
+          />
         )}
 
-        {/* View 3: Search Unpaid by Product View */}
+        {/* VIEW 4: SEARCH UNPAID BY PRODUCT */}
         {viewMode === 'by_product' && (
-          <div className="space-y-4">
-            {/* Search Input Box */}
-            <div className="relative">
-              <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
-                <Search className="w-5 h-5 text-slate-400" />
-              </div>
-              <input
-                type="text"
-                value={productSearchTerm}
-                onChange={(e) => setProductSearchTerm(e.target.value)}
-                placeholder="Search unpaid products by name (e.g., Cappuccino, Cold Brew, Latte, Sandwich)..."
-                className="w-full pl-11 pr-10 py-3.5 bg-slate-900 border border-slate-700 rounded-2xl text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500 text-sm shadow-inner transition"
-              />
-              {productSearchTerm && (
-                <button
-                  type="button"
-                  onClick={() => setProductSearchTerm('')}
-                  className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-slate-400 hover:text-white"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              )}
-            </div>
-
-            {/* Metrics & Context Bar */}
-            <div className="flex flex-wrap items-center justify-between text-xs text-slate-400 px-1 gap-2">
-              <div>
-                Showing <strong className="text-white">{productTabs.length}</strong> unpaid product line{productTabs.length === 1 ? '' : 's'}
-                {productSearchTerm && <span> matching &ldquo;<span className="text-amber-400 font-semibold">{productSearchTerm}</span>&rdquo;</span>}
-              </div>
-              <div className="flex items-center space-x-3">
-                <span>
-                  Total Unpaid Units: <strong className="text-amber-400 font-mono text-sm">{productTabs.reduce((acc, p) => acc + p.totalUnpaidQuantity, 0)}</strong>
-                </span>
-                <span>•</span>
-                <span>
-                  Total Value: <strong className="text-emerald-400 font-mono text-sm">{formatCurrency(productTabs.reduce((acc, p) => acc + p.totalUnpaidAmountInCents, 0), currency)}</strong>
-                </span>
-              </div>
-            </div>
-
-            {/* Product List */}
-            {productLoading ? (
-              <div className="flex items-center justify-center h-48 text-slate-400 text-sm">
-                Searching unpaid products...
-              </div>
-            ) : productTabs.length === 0 ? (
-              <div className="p-12 text-center bg-slate-900/60 rounded-2xl border border-slate-800/80">
-                <CheckCircle className="w-12 h-12 text-emerald-400 mx-auto mb-3" />
-                <h3 className="text-lg font-bold text-white">
-                  {productSearchTerm ? 'No Unpaid Products Match Your Search' : 'All Product Tabs Clear!'}
-                </h3>
-                <p className="text-sm text-slate-400 mt-1">
-                  {productSearchTerm
-                    ? `No unpaid bills currently contain items matching "${productSearchTerm}".`
-                    : 'There are no open unpaid or hold items on any bill at this time.'}
-                </p>
-              </div>
-            ) : (
-              <div className="space-y-4">
-                {productTabs.map((prod) => {
-                  const isExpanded = expandedProductNames[prod.productName] !== false; // Default expanded
-                  const holders = prod.holdersBreakdown || prod.staffBreakdown || [];
-
-                  return (
-                    <div
-                      key={prod.productName}
-                      className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-sm transition"
-                    >
-                      {/* Product Header */}
-                      <div
-                        onClick={() => toggleProductAccordion(prod.productName)}
-                        className="p-4 sm:p-5 flex items-center justify-between cursor-pointer hover:bg-slate-850 transition select-none"
-                      >
-                        <div className="flex items-center space-x-3.5">
-                          <div className="p-2.5 rounded-xl bg-amber-500/10 text-amber-400 border border-amber-500/20">
-                            <Package className="w-6 h-6" />
-                          </div>
-                          <div>
-                            <div className="flex items-center space-x-2 flex-wrap gap-y-1">
-                              <h2 className="text-base sm:text-lg font-bold text-white">
-                                {prod.productName}
-                              </h2>
-                              {prod.categoryName && (
-                                <span className="px-2 py-0.5 rounded-md text-[11px] font-semibold bg-slate-800 text-amber-300 border border-slate-700">
-                                  {prod.categoryName}
-                                </span>
-                              )}
-                              {prod.sku && (
-                                <span className="px-2 py-0.5 rounded-md text-[11px] font-mono text-slate-400 bg-slate-950 border border-slate-800">
-                                  {prod.sku}
-                                </span>
-                              )}
-                            </div>
-                            <div className="text-xs text-slate-400 mt-0.5">
-                              Held across <strong className="text-slate-300">{holders.length}</strong> open bill{holders.length === 1 ? '' : 's'}
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="flex items-center space-x-4">
-                          <div className="text-right">
-                            <div className="inline-flex items-center px-2.5 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/30 text-xs font-mono font-bold mb-1">
-                              {prod.totalUnpaidQuantity} {prod.totalUnpaidQuantity === 1 ? 'unit' : 'units'} on hold
-                            </div>
-                            <div className="text-base sm:text-lg font-extrabold text-white font-mono">
-                              {formatCurrency(prod.totalUnpaidAmountInCents, currency)}
-                            </div>
-                          </div>
-
-                          <div className="text-slate-400">
-                            {isExpanded ? <ChevronDown className="w-5 h-5" /> : <ChevronRight className="w-5 h-5" />}
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Holder Breakdown Accordion Content */}
-                      {isExpanded && (
-                        <div className="border-t border-slate-800 p-4 sm:p-5 bg-slate-950/60 space-y-3">
-                          <div className="text-xs uppercase tracking-wider font-bold text-slate-400 flex items-center space-x-2">
-                            <Layers className="w-4 h-4 text-amber-400" />
-                            <span>Held Bills & Quantities for {prod.productName}</span>
-                          </div>
-
-                          <div className="divide-y divide-slate-800 border border-slate-800 rounded-xl overflow-hidden bg-slate-900/90">
-                            {holders.map((holder, idx) => {
-                              const isCustomer = holder.tabType === 'CUSTOMER' || (!holder.tabType && holder.customerName);
-                              const isRoom = holder.tabType === 'ROOM' || holder.roomNumber;
-                              const isStaff = holder.tabType === 'STAFF' || holder.staffMemberId;
-
-                              const holderKey = isCustomer 
-                                ? (holder.customerId || holder.customerName || idx)
-                                : isRoom
-                                ? `${holder.roomNumber}_${holder.guestName || idx}`
-                                : (holder.staffMemberId || idx);
-
-                              const auditKey = `${prod.productName}_${holderKey}`;
-                              const isAuditOpen = expandedProductAuditKeys[auditKey];
-
-                              const displayName = isCustomer
-                                ? (holder.customerName || 'Unnamed Customer')
-                                : isRoom
-                                ? `Room ${holder.roomNumber}${holder.guestName ? ` • ${holder.guestName}` : ''}`
-                                : (holder.staffName || 'Staff Member');
-
-                              return (
-                                <div key={auditKey} className="p-3.5 space-y-2.5">
-                                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                                    <div className="flex items-center space-x-3">
-                                      <div className={`w-9 h-9 rounded-xl font-bold flex items-center justify-center text-sm border ${
-                                        isCustomer 
-                                          ? 'bg-blue-500/10 text-blue-400 border-blue-500/20'
-                                          : isRoom
-                                          ? 'bg-orange-500/10 text-orange-400 border-orange-500/20'
-                                          : 'bg-purple-500/10 text-purple-400 border-purple-500/20'
-                                      }`}>
-                                        {isCustomer ? <UserCheck className="w-4 h-4" /> : isRoom ? <BedDouble className="w-4 h-4" /> : <Users className="w-4 h-4" />}
-                                      </div>
-                                      <div>
-                                        <div className="text-sm font-bold text-white flex items-center space-x-2 flex-wrap gap-y-1">
-                                          <span>{displayName}</span>
-                                          {isCustomer && (
-                                            <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase bg-blue-500/10 text-blue-400 border border-blue-500/30">
-                                              Customer Bill
-                                            </span>
-                                          )}
-                                          {isRoom && (
-                                            <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase bg-orange-500/10 text-orange-400 border border-orange-500/30">
-                                              Room Bill
-                                            </span>
-                                          )}
-                                          {isStaff && (
-                                            <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase bg-purple-500/10 text-purple-400 border border-purple-500/30">
-                                              Staff Tab
-                                            </span>
-                                          )}
-                                          <span className="px-2.5 py-0.5 rounded-md bg-amber-500/20 text-amber-300 font-mono font-bold text-xs border border-amber-500/30">
-                                            {holder.quantity} on hold
-                                          </span>
-                                        </div>
-                                        <div className="text-xs text-slate-400 mt-0.5">
-                                          Subtotal: <strong className="text-slate-200 font-mono">{formatCurrency(holder.totalAmountInCents, currency)}</strong>
-                                          {holder.discountInCents > 0 && (
-                                            <span className="text-emerald-400 ml-2 font-mono">
-                                              (Disc: -{formatCurrency(holder.discountInCents, currency)})
-                                            </span>
-                                          )}
-                                        </div>
-                                      </div>
-                                    </div>
-
-                                    <div className="flex items-center space-x-2.5 self-end sm:self-auto">
-                                      <button
-                                        type="button"
-                                        onClick={() => toggleProductAudit(auditKey)}
-                                        className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-750 text-slate-300 text-xs font-semibold flex items-center space-x-1 transition border border-slate-700 cursor-pointer"
-                                      >
-                                        <Clock className="w-3.5 h-3.5 text-amber-400" />
-                                        <span>Audit Trail ({holder.occurrences?.length || 0})</span>
-                                        {isAuditOpen ? <ChevronDown className="w-3.5 h-3.5 ml-1" /> : <ChevronRight className="w-3.5 h-3.5 ml-1" />}
-                                      </button>
-
-                                      <button
-                                        type="button"
-                                        onClick={() => {
-                                          if (isCustomer) {
-                                            openCustomerSettleModal(holder.customerName);
-                                          } else if (isRoom) {
-                                            openRoomSettleModal(holder.roomNumber, holder.guestName);
-                                          } else {
-                                            openSettleModal(holder.staffMemberId, holder.staffName);
-                                          }
-                                        }}
-                                        className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-bold text-xs rounded-lg shadow-md transition flex items-center space-x-1 cursor-pointer"
-                                      >
-                                        <DollarSign className="w-3.5 h-3.5" />
-                                        <span>
-                                          {isCustomer ? 'Settle Customer Bill' : isRoom ? 'Settle Room Bill' : 'Settle Staff Tab'}
-                                        </span>
-                                      </button>
-                                    </div>
-                                  </div>
-
-                                  {/* Nested Discrete Occurrence Timestamps */}
-                                  {isAuditOpen && holder.occurrences && (
-                                    <div className="ml-0 sm:ml-12 p-3 bg-slate-950/90 rounded-lg border border-slate-800 space-y-1.5 text-xs text-slate-300">
-                                      <div className="font-semibold text-[11px] text-amber-400/90 mb-1 flex items-center space-x-1">
-                                        <Clock className="w-3.5 h-3.5" />
-                                        <span>Discrete Taking Timestamps for {displayName}:</span>
-                                      </div>
-                                      {holder.occurrences.map((occ, oIdx) => {
-                                        const dateObj = new Date(occ.takenAt);
-                                        const dateStr = dateObj.toLocaleDateString();
-                                        const timeStr = dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-
-                                        return (
-                                          <div
-                                            key={oIdx}
-                                            onClick={() => handleViewTxnDetails(occ.transactionId || occ.txnNumber)}
-                                            className="flex items-center justify-between py-1.5 px-2 rounded-lg border-b border-slate-800/60 last:border-0 hover:bg-slate-900 cursor-pointer transition select-none group"
-                                            title="Click to view full transaction details"
-                                          >
-                                            <span className="flex items-center space-x-2">
-                                              <span className="font-mono text-amber-400 font-bold group-hover:underline flex items-center space-x-1">
-                                                <span>{occ.txnNumber}</span>
-                                                <Eye className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity" />
-                                              </span>
-                                              <span className="text-slate-400">•</span>
-                                              <span>{dateStr} at {timeStr}</span>
-                                              <span className="text-amber-300 font-bold font-mono">({occ.quantity}x on hold)</span>
-                                            </span>
-                                            <span className="text-slate-400 text-[11px]">
-                                              Cashier: <strong className="text-slate-200">{occ.cashierName}</strong>
-                                            </span>
-                                          </div>
-                                        );
-                                      })}
-                                    </div>
-                                  )}
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
+          <ProductTabsView
+            productSearchTerm={productSearchTerm}
+            setProductSearchTerm={setProductSearchTerm}
+            productTabs={productTabs}
+            productLoading={productLoading}
+            expandedProductNames={expandedProductNames}
+            toggleProductAccordion={toggleProductAccordion}
+            expandedProductAuditKeys={expandedProductAuditKeys}
+            toggleProductAudit={toggleProductAudit}
+            onOpenCustomerSettleModal={openCustomerSettleModal}
+            onOpenRoomSettleModal={openRoomSettleModal}
+            onOpenSettleModal={openSettleModal}
+            onViewTxnDetails={handleViewTxnDetails}
+            currency={currency}
+          />
         )}
 
-        {/* View 6: Recently Settled Bills View (Mistake Recovery / Revert) */}
+        {/* VIEW 5: RECENTLY SETTLED BILLS (Mistake Recovery / Revert) */}
         {viewMode === 'recently_settled' && (
-          <div className="space-y-4">
-            {/* Search Input & Info Banner */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-900/60 p-4 rounded-2xl border border-slate-800">
-              <div className="relative flex-1 max-w-md">
-                <Search className="w-4 h-4 absolute left-3 top-3 text-slate-400" />
-                <input
-                  type="text"
-                  value={settledSearchTerm}
-                  onChange={(e) => setSettledSearchTerm(e.target.value)}
-                  placeholder="Search settled bills by TXN #, customer, room, or staff..."
-                  className="w-full pl-9 pr-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-white placeholder-slate-400 text-xs focus:ring-2 focus:ring-amber-500 focus:outline-none"
-                />
-              </div>
-
-              <div className="text-xs text-slate-400 flex items-center space-x-2">
-                <span className="w-2 h-2 rounded-full bg-amber-400"></span>
-                <span>Showing last <strong>{settledBills.length}</strong> settled transactions</span>
-              </div>
-            </div>
-
-            {/* Settled Bills List */}
-            {settledLoading ? (
-              <div className="p-8 text-center text-slate-400">Loading recently settled bills...</div>
-            ) : settledBills.length === 0 ? (
-              <div className="p-12 text-center text-slate-500 bg-slate-900/40 rounded-2xl border border-slate-800 space-y-2">
-                <RotateCcw className="w-8 h-8 mx-auto text-slate-600 opacity-50" />
-                <p className="font-semibold text-slate-400">No settled bills found</p>
-                <p className="text-xs text-slate-500">Bills settled today or matching your search will appear here.</p>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {settledBills.map((bill) => {
-                  const settledDate = bill.settledAt ? new Date(bill.settledAt) : new Date(bill.updatedAt);
-                  const isExpanded = !!expandedSettledBillIds[bill._id];
-
-                  return (
-                    <div
-                      key={bill._id}
-                      className="bg-slate-900 border border-slate-800 hover:border-slate-700/80 rounded-2xl p-4 transition space-y-3"
-                    >
-                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                        <div className="flex items-start sm:items-center space-x-3 flex-wrap gap-y-2">
-                          <div className="flex items-center space-x-2">
-                            <span className="text-xs font-mono font-black text-amber-400">
-                              {bill.txnNumber}
-                            </span>
-                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold border bg-emerald-950/80 text-emerald-400 border-emerald-800">
-                              SETTLED ({bill.paymentMethod})
-                            </span>
-                          </div>
-
-                          {/* Customer / Room / Staff badges */}
-                          {bill.customerName && (
-                            <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-500/10 text-blue-300 border border-blue-500/30">
-                              Customer: {bill.customerName}
-                            </span>
-                          )}
-                          {bill.roomNumber && (
-                            <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-500/10 text-amber-300 border border-amber-500/30">
-                              Room: {bill.roomNumber} {bill.guestName ? `(${bill.guestName})` : ''}
-                            </span>
-                          )}
-                          {bill.staffNameSnapshot && (
-                            <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-purple-500/10 text-purple-300 border border-purple-500/30">
-                              Staff: {bill.staffNameSnapshot}
-                            </span>
-                          )}
-                        </div>
-
-                        {/* Amount & Revert Action */}
-                        <div className="flex items-center space-x-3 self-end sm:self-auto">
-                          <div className="text-right font-mono">
-                            <div className="text-base font-black text-white">
-                              {formatCurrency(bill.grandTotalInCents, currency)}
-                            </div>
-                            <div className="text-[10px] text-slate-400">
-                              {bill.items?.length || 0} items
-                            </div>
-                          </div>
-
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setRevertModalTxn(bill);
-                              setShowRevertModal(true);
-                            }}
-                            className="px-3.5 py-2 bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 hover:text-amber-200 border border-amber-500/30 rounded-xl text-xs font-bold transition flex items-center space-x-1.5 cursor-pointer active:scale-95 shadow-sm"
-                            title="Revert settlement and return bill to unpaid tab"
-                          >
-                            <RotateCcw className="w-3.5 h-3.5 text-amber-400" />
-                            <span>Revert Settlement</span>
-                          </button>
-                        </div>
-                      </div>
-
-                      {/* Audit Details & Items accordion toggle */}
-                      <div className="pt-2 border-t border-slate-800/60 flex items-center justify-between text-xs text-slate-400 flex-wrap gap-2">
-                        <div className="flex items-center space-x-3 text-[11px]">
-                          <span>Settled: <strong className="text-slate-300">{settledDate.toLocaleDateString()} {settledDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</strong></span>
-                          {bill.settledByCashierNameSnapshot && (
-                            <span>By: <strong className="text-slate-300">{bill.settledByCashierNameSnapshot}</strong></span>
-                          )}
-                        </div>
-
-                        <button
-                          type="button"
-                          onClick={() => toggleSettledBillAccordion(bill._id)}
-                          className="text-[11px] text-amber-400 hover:text-amber-300 font-semibold flex items-center space-x-1 cursor-pointer"
-                        >
-                          <span>{isExpanded ? 'Hide Items' : 'View Items'}</span>
-                          {isExpanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
-                        </button>
-                      </div>
-
-                      {/* Expanded Items */}
-                      {isExpanded && bill.items && bill.items.length > 0 && (
-                        <div className="p-3 bg-slate-950/80 rounded-xl border border-slate-800 text-xs space-y-1.5">
-                          {bill.items.map((item, idx) => (
-                            <div key={item._id || idx} className="flex justify-between items-center py-1 border-b border-slate-800/40 last:border-none">
-                              <span className="text-slate-300 font-medium">
-                                {item.quantity}x {item.productNameSnapshot}
-                              </span>
-                              <span className="font-mono text-slate-200">
-                                {formatCurrency(item.finalLineTotalInCents, currency)}
-                              </span>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
+          <RecentlySettledView
+            settledSearchTerm={settledSearchTerm}
+            setSettledSearchTerm={setSettledSearchTerm}
+            settledBills={settledBills}
+            settledLoading={settledLoading}
+            expandedSettledBillIds={expandedSettledBillIds}
+            toggleSettledBillAccordion={toggleSettledBillAccordion}
+            onOpenRevertModal={(bill) => {
+              setRevertModalTxn(bill);
+              setShowRevertModal(true);
+            }}
+            currency={currency}
+          />
         )}
 
-        {/* Discrete Transaction Settlement Modal */}
-        {settleModalStaff && (
-          <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
-            <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-2xl w-full p-6 space-y-4 shadow-2xl animate-in fade-in zoom-in-95">
-              {/* Modal Header */}
-              <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-                <div>
-                  <h3 className="text-lg font-bold text-white">
-                    Settle Transactions: {settleModalStaff.name}
-                  </h3>
-                  <p className="text-xs text-slate-400">
-                    Select the discrete transactions to settle (whole transaction units).
-                  </p>
-                </div>
-                <button
-                  onClick={() => setSettleModalStaff(null)}
-                  className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
+        {/* Staff Settle Modal */}
+        <StaffSettleModal
+          settleModalStaff={settleModalStaff}
+          staffTransactions={staffTransactions}
+          selectedTxnIds={selectedTxnIds}
+          onToggleTxnSelect={handleToggleTxnSelect}
+          onSelectAll={handleSelectAll}
+          paymentMethod={paymentMethod}
+          setPaymentMethod={setPaymentMethod}
+          selectedTotalInCents={selectedTotalInCents}
+          settleLoading={settleLoading}
+          onExecuteSettlement={handleExecuteSettlement}
+          onViewTxnDetails={handleViewTxnDetails}
+          onClose={() => setSettleModalStaff(null)}
+          currency={currency}
+        />
 
-              {/* Transactions List with Checkboxes */}
-              <div className="max-h-72 overflow-y-auto space-y-2 pr-1">
-                <div className="flex items-center justify-between pb-1 border-b border-slate-800 text-xs text-slate-400">
-                  <button
-                    type="button"
-                    onClick={handleSelectAll}
-                    className="font-bold text-amber-400 hover:underline"
-                  >
-                    {selectedTxnIds.length === staffTransactions.length ? 'Deselect All' : 'Select All'}
-                  </button>
-                  <span>{staffTransactions.length} open transactions</span>
-                </div>
+        {/* Room Settle Modal */}
+        <RoomSettleModal
+          settleModalRoom={settleModalRoom}
+          roomTransactions={roomTransactions}
+          selectedRoomTxnIds={selectedRoomTxnIds}
+          onToggleRoomTxnSelect={handleToggleRoomTxnSelect}
+          onSelectAllRoomTxns={handleSelectAllRoomTxns}
+          roomPaymentMethod={roomPaymentMethod}
+          setRoomPaymentMethod={setRoomPaymentMethod}
+          selectedRoomTotalInCents={selectedRoomTotalInCents}
+          roomSettleLoading={roomSettleLoading}
+          onExecuteRoomSettlement={handleExecuteRoomSettlement}
+          onViewTxnDetails={handleViewTxnDetails}
+          onClose={() => setSettleModalRoom(null)}
+          currency={currency}
+        />
 
-                {staffTransactions.map((txn) => {
-                  const isSelected = selectedTxnIds.includes(txn._id);
-                  const dateStr = new Date(txn.createdAt).toLocaleDateString();
-                  const timeStr = new Date(txn.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-
-                  return (
-                    <div
-                      key={txn._id}
-                      onClick={() => handleToggleTxnSelect(txn._id)}
-                      className={`p-3 rounded-xl border flex items-center justify-between cursor-pointer transition select-none group ${
-                        isSelected
-                          ? 'bg-slate-800/90 border-amber-500/80 text-white'
-                          : 'bg-slate-900 border-slate-800 text-slate-400 hover:bg-slate-850'
-                      }`}
-                    >
-                      <div className="flex items-center space-x-3">
-                        <input
-                          type="checkbox"
-                          checked={isSelected}
-                          onChange={() => {}}
-                          className="w-4 h-4 rounded text-amber-500 focus:ring-amber-500 bg-slate-900 border-slate-700 pointer-events-none"
-                        />
-                        <div>
-                          <div
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleViewTxnDetails(txn);
-                            }}
-                            className="font-mono font-bold text-amber-400 text-sm hover:underline hover:text-amber-300 inline-flex items-center space-x-1 cursor-pointer"
-                            title="Click to view full transaction details"
-                          >
-                            <span>{txn.txnNumber}</span>
-                            <Eye className="w-3.5 h-3.5 opacity-60 group-hover:opacity-100 transition-opacity" />
-                          </div>
-                          <div className="text-xs text-slate-400">
-                            {dateStr} {timeStr} • {txn.items?.length || 0} items
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center space-x-3">
-                        <div className="font-mono font-bold text-sm">
-                          {formatCurrency(txn.grandTotalInCents, currency)}
-                        </div>
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleViewTxnDetails(txn);
-                          }}
-                          className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-amber-400 border border-slate-700 hover:border-amber-500/40 transition cursor-pointer"
-                          title="View Transaction Details"
-                        >
-                          <Eye className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-
-              {/* Payment Method Selector */}
-              <div className="space-y-2 pt-2 border-t border-slate-800">
-                <div className="text-xs font-semibold text-slate-400">Payment Method:</div>
-                <div className="grid grid-cols-3 gap-2">
-                  {['CASH', 'CARD', 'PAYROLL_DEDUCTION'].map((method) => (
-                    <button
-                      key={method}
-                      type="button"
-                      onClick={() => setPaymentMethod(method)}
-                      className={`py-2 px-3 rounded-xl text-xs font-bold transition border ${
-                        paymentMethod === method
-                          ? 'bg-amber-500 text-black border-amber-500 shadow-md'
-                          : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-750'
-                      }`}
-                    >
-                      {method.replace('_', ' ')}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Modal Footer / Settlement CTA */}
-              <div className="flex items-center justify-between pt-3 border-t border-slate-800">
-                <div>
-                  <div className="text-xs text-slate-400">Selected ({selectedTxnIds.length} txns):</div>
-                  <div className="text-xl font-black text-amber-400 font-mono">
-                    {formatCurrency(selectedTotalInCents, currency)}
-                  </div>
-                </div>
-
-                <div className="flex items-center space-x-2">
-                  <button
-                    type="button"
-                    onClick={() => setSettleModalStaff(null)}
-                    className="px-4 py-2 text-sm text-slate-400 hover:text-white"
-                  >
-                    Cancel
-                  </button>
-
-                  <button
-                    type="button"
-                    disabled={settleLoading || selectedTxnIds.length === 0}
-                    onClick={handleExecuteSettlement}
-                    className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-bold text-sm rounded-xl shadow-lg shadow-emerald-600/20 disabled:opacity-50 transition"
-                  >
-                    {settleLoading ? 'Settling...' : `Settle Selected (${formatCurrency(selectedTotalInCents, currency)})`}
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Discrete Room Transaction Settlement Modal */}
-        {settleModalRoom && (
-          <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-            <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-2xl w-full p-6 space-y-4 shadow-2xl animate-in fade-in zoom-in-95 max-h-[92vh] flex flex-col">
-              {/* Modal Header */}
-              <div className="flex items-center justify-between border-b border-slate-800 pb-3 shrink-0">
-                <div>
-                  <h3 className="text-lg font-bold text-white flex items-center space-x-2">
-                    <BedDouble className="w-5 h-5 text-amber-400" />
-                    <span>Settle Room Bill — Room {settleModalRoom.roomNumber}{settleModalRoom.guestName ? ` (${settleModalRoom.guestName})` : ''}</span>
-                  </h3>
-                  <p className="text-xs text-slate-400 mt-0.5">
-                    Select discrete guest checkouts to settle with cash, card, or front-desk transfer.
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setSettleModalRoom(null)}
-                  className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-850 cursor-pointer"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-
-              {/* Transactions List with Checkboxes */}
-              <div className="max-h-72 overflow-y-auto space-y-2 pr-1">
-                <div className="flex items-center justify-between pb-1 border-b border-slate-800 text-xs text-slate-400">
-                  <button
-                    type="button"
-                    onClick={handleSelectAllRoomTxns}
-                    className="font-bold text-amber-400 hover:underline cursor-pointer"
-                  >
-                    {selectedRoomTxnIds.length === roomTransactions.length ? 'Deselect All' : 'Select All'}
-                  </button>
-                  <span>{roomTransactions.length} open transaction(s)</span>
-                </div>
-
-                {roomTransactions.map((txn) => {
-                  const isSelected = selectedRoomTxnIds.includes(txn._id);
-                  const dateStr = new Date(txn.createdAt).toLocaleDateString();
-                  const timeStr = new Date(txn.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-
-                  return (
-                    <div
-                      key={txn._id}
-                      onClick={() => handleToggleRoomTxnSelect(txn._id)}
-                      className={`p-3 rounded-xl border flex items-center justify-between cursor-pointer transition select-none group ${
-                        isSelected
-                          ? 'bg-slate-800/90 border-amber-500/80 text-white'
-                          : 'bg-slate-900 border-slate-800 text-slate-400 hover:bg-slate-850'
-                      }`}
-                    >
-                      <div className="flex items-center space-x-3">
-                        <input
-                          type="checkbox"
-                          checked={isSelected}
-                          onChange={() => {}}
-                          className="w-4 h-4 rounded text-amber-500 focus:ring-amber-500 bg-slate-900 border-slate-700 pointer-events-none"
-                        />
-                        <div>
-                          <div
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleViewTxnDetails(txn);
-                            }}
-                            className="font-mono font-bold text-amber-400 text-sm hover:underline hover:text-amber-300 inline-flex items-center space-x-1 cursor-pointer"
-                            title="Click to view full transaction details"
-                          >
-                            <span>{txn.txnNumber}</span>
-                            <Eye className="w-3.5 h-3.5 opacity-60 group-hover:opacity-100 transition-opacity" />
-                          </div>
-                          <div className="text-xs text-slate-400 flex items-center space-x-1.5 flex-wrap">
-                            {txn.roomNumber && (
-                              <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-500/15 text-amber-300 border border-amber-500/30 font-mono">
-                                Room {txn.roomNumber}
-                              </span>
-                            )}
-                            {txn.guestName && (
-                              <span className="text-emerald-400 font-medium">({txn.guestName})</span>
-                            )}
-                            <span>•</span>
-                            <span>{dateStr} {timeStr}</span>
-                            <span>•</span>
-                            <span>{txn.items?.length || 0} items</span>
-                            {txn.notes && <span className="text-slate-500 italic">• &ldquo;{txn.notes}&rdquo;</span>}
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center space-x-3">
-                        <div className="font-mono font-bold text-sm">
-                          {formatCurrency(txn.grandTotalInCents, currency)}
-                        </div>
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleViewTxnDetails(txn);
-                          }}
-                          className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-amber-400 border border-slate-700 hover:border-amber-500/40 transition cursor-pointer"
-                          title="View Transaction Details"
-                        >
-                          <Eye className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-
-              {/* Payment Method Selector */}
-              <div className="space-y-2 pt-2 border-t border-slate-800 shrink-0">
-                <div className="text-xs font-semibold text-slate-400">Settlement Payment Method:</div>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                  {['CASH', 'CARD', 'TRANSFER', 'OTHER'].map((method) => (
-                    <button
-                      key={method}
-                      type="button"
-                      onClick={() => setRoomPaymentMethod(method)}
-                      className={`py-2 px-3 rounded-xl text-xs font-bold transition border text-center cursor-pointer ${
-                        roomPaymentMethod === method
-                          ? 'bg-amber-500 text-black border-amber-500 shadow-md'
-                          : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-750'
-                      }`}
-                    >
-                      {method.replace('_', ' ')}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Modal Footer / Settlement CTA */}
-              <div className="flex items-center justify-between pt-3 border-t border-slate-800 shrink-0">
-                <div>
-                  <div className="text-xs text-slate-400">Selected ({selectedRoomTxnIds.length} txns):</div>
-                  <div className="text-xl font-black text-amber-400 font-mono">
-                    {formatCurrency(selectedRoomTotalInCents, currency)}
-                  </div>
-                </div>
-
-                <div className="flex items-center space-x-2">
-                  <button
-                    type="button"
-                    onClick={() => setSettleModalRoom(null)}
-                    className="px-4 py-2 text-sm text-slate-400 hover:text-white cursor-pointer"
-                  >
-                    Cancel
-                  </button>
-
-                  <button
-                    type="button"
-                    disabled={roomSettleLoading || selectedRoomTxnIds.length === 0}
-                    onClick={handleExecuteRoomSettlement}
-                    className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-bold text-sm rounded-xl shadow-lg shadow-emerald-600/20 disabled:opacity-50 transition cursor-pointer"
-                  >
-                    {roomSettleLoading ? 'Settling...' : `Settle Room Bill (${formatCurrency(selectedRoomTotalInCents, currency)})`}
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Discrete Customer Transaction Settlement Modal */}
-        {settleModalCustomer && (
-          <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-            <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-2xl w-full p-6 space-y-4 shadow-2xl animate-in fade-in zoom-in-95 max-h-[92vh] flex flex-col">
-              {/* Modal Header */}
-              <div className="flex items-center justify-between border-b border-slate-800 pb-3 shrink-0">
-                <div>
-                  <h3 className="text-lg font-bold text-white flex items-center space-x-2">
-                    <UserCheck className="w-5 h-5 text-amber-400" />
-                    <span>Settle Customer Bill — {settleModalCustomer.customerName}</span>
-                  </h3>
-                  <p className="text-xs text-slate-400 mt-0.5">
-                    Select discrete orders to settle with cash, card, or transfer.
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setSettleModalCustomer(null)}
-                  className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-850 cursor-pointer"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-
-              {/* Transactions List with Checkboxes */}
-              <div className="max-h-72 overflow-y-auto space-y-2 pr-1">
-                <div className="flex items-center justify-between pb-1 border-b border-slate-800 text-xs text-slate-400">
-                  <button
-                    type="button"
-                    onClick={handleSelectAllCustomerTxns}
-                    className="font-bold text-amber-400 hover:underline cursor-pointer"
-                  >
-                    {selectedCustomerTxnIds.length === customerTransactions.length ? 'Deselect All' : 'Select All'}
-                  </button>
-                  <span>{customerTransactions.length} open transaction(s)</span>
-                </div>
-
-                {customerTransactions.map((txn) => {
-                  const isSelected = selectedCustomerTxnIds.includes(txn._id);
-                  const dateStr = new Date(txn.createdAt).toLocaleDateString();
-                  const timeStr = new Date(txn.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-
-                  return (
-                    <div
-                      key={txn._id}
-                      onClick={() => handleToggleCustomerTxnSelect(txn._id)}
-                      className={`p-3 rounded-xl border flex items-center justify-between cursor-pointer transition select-none group ${
-                        isSelected
-                          ? 'bg-slate-800/90 border-amber-500/80 text-white'
-                          : 'bg-slate-900 border-slate-800 text-slate-400 hover:bg-slate-850'
-                      }`}
-                    >
-                      <div className="flex items-center space-x-3">
-                        <input
-                          type="checkbox"
-                          checked={isSelected}
-                          onChange={() => {}}
-                          className="w-4 h-4 rounded text-amber-500 focus:ring-amber-500 bg-slate-900 border-slate-700 pointer-events-none"
-                        />
-                        <div>
-                          <div
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleViewTxnDetails(txn);
-                            }}
-                            className="font-mono font-bold text-amber-400 text-sm hover:underline hover:text-amber-300 inline-flex items-center space-x-1 cursor-pointer"
-                            title="Click to view full transaction details"
-                          >
-                            <span>{txn.txnNumber}</span>
-                            <Eye className="w-3.5 h-3.5 opacity-60 group-hover:opacity-100 transition-opacity" />
-                          </div>
-                          <div className="text-xs text-slate-400">
-                            {dateStr} {timeStr} • {txn.items?.length || 0} items
-                            {txn.notes && <span className="ml-1 text-slate-500 italic">• &ldquo;{txn.notes}&rdquo;</span>}
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center space-x-3">
-                        <div className="font-mono font-bold text-sm">
-                          {formatCurrency(txn.grandTotalInCents, currency)}
-                        </div>
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleViewTxnDetails(txn);
-                          }}
-                          className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-amber-400 border border-slate-700 hover:border-amber-500/40 transition cursor-pointer"
-                          title="View Transaction Details"
-                        >
-                          <Eye className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-
-              {/* Payment Method Selector */}
-              <div className="space-y-2 pt-2 border-t border-slate-800 shrink-0">
-                <div className="text-xs font-semibold text-slate-400">Settlement Payment Method:</div>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                  {['CASH', 'CARD', 'TRANSFER', 'OTHER'].map((method) => (
-                    <button
-                      key={method}
-                      type="button"
-                      onClick={() => setCustomerPaymentMethod(method)}
-                      className={`py-2 px-3 rounded-xl text-xs font-bold transition border text-center cursor-pointer ${
-                        customerPaymentMethod === method
-                          ? 'bg-amber-500 text-black border-amber-500 shadow-md'
-                          : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-750'
-                      }`}
-                    >
-                      {method.replace('_', ' ')}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Modal Footer / Settlement CTA */}
-              <div className="flex items-center justify-between pt-3 border-t border-slate-800 shrink-0">
-                <div>
-                  <div className="text-xs text-slate-400">Selected ({selectedCustomerTxnIds.length} txns):</div>
-                  <div className="text-xl font-black text-amber-400 font-mono">
-                    {formatCurrency(selectedCustomerTotalInCents, currency)}
-                  </div>
-                </div>
-
-                <div className="flex items-center space-x-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const selectedTxns = customerTransactions.filter((t) => selectedCustomerTxnIds.includes(t._id));
-                      handleOpenPrintCustomerBill(
-                        settleModalCustomer.customerName,
-                        selectedTxns.length > 0 ? selectedTxns : customerTransactions
-                      );
-                    }}
-                    className="px-3.5 py-2.5 rounded-xl text-xs font-bold bg-slate-800 hover:bg-slate-750 text-slate-200 hover:text-amber-400 border border-slate-700 hover:border-amber-500/40 transition flex items-center space-x-1.5 cursor-pointer shadow-sm"
-                    title="Print bill statement for selected or all open transactions"
-                  >
-                    <Printer className="w-4 h-4" />
-                    <span>Print Bill</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setSettleModalCustomer(null)}
-                    className="px-4 py-2 text-sm text-slate-400 hover:text-white cursor-pointer"
-                  >
-                    Cancel
-                  </button>
-
-                  <button
-                    type="button"
-                    disabled={customerSettleLoading || selectedCustomerTxnIds.length === 0}
-                    onClick={handleExecuteCustomerSettlement}
-                    className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-bold text-sm rounded-xl shadow-lg shadow-emerald-600/20 disabled:opacity-50 transition cursor-pointer"
-                  >
-                    {customerSettleLoading ? 'Settling...' : `Settle Customer Bill (${formatCurrency(selectedCustomerTotalInCents, currency)})`}
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
+        {/* Customer Settle Modal */}
+        <CustomerSettleModal
+          settleModalCustomer={settleModalCustomer}
+          customerTransactions={customerTransactions}
+          selectedCustomerTxnIds={selectedCustomerTxnIds}
+          onToggleCustomerTxnSelect={handleToggleCustomerTxnSelect}
+          onSelectAllCustomerTxns={handleSelectAllCustomerTxns}
+          customerPaymentMethod={customerPaymentMethod}
+          setCustomerPaymentMethod={setCustomerPaymentMethod}
+          selectedCustomerTotalInCents={selectedCustomerTotalInCents}
+          customerSettleLoading={customerSettleLoading}
+          onExecuteCustomerSettlement={handleExecuteCustomerSettlement}
+          onViewTxnDetails={handleViewTxnDetails}
+          onOpenPrintCustomerBill={handleOpenPrintCustomerBill}
+          onClose={() => setSettleModalCustomer(null)}
+          currency={currency}
+        />
 
         {/* Revert Settlement Confirmation Modal */}
         {showRevertModal && revertModalTxn && (
@@ -2712,7 +830,7 @@ export default function StaffTabsPage() {
           />
         )}
 
-        {/* Transaction Detail Modal (Pic 1 & Pic 2) */}
+        {/* Transaction Detail Modal */}
         {selectedDetailTxn && (
           <TransactionDetailModal
             txn={selectedDetailTxn}

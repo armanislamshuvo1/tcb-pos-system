@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useVoidTransactionMutation } from '../hooks/queries/useLedgerQueries';
 import { formatCurrency } from '../utils/currency';
@@ -13,7 +13,8 @@ import {
   CheckCircle2,
   Delete,
   Ban,
-  Receipt
+  Receipt,
+  Loader2
 } from 'lucide-react';
 
 const PRESET_REASONS = [
@@ -44,6 +45,42 @@ export default function VoidTransactionModal({ isOpen, txn, onClose, onVoidSucce
       setSubmitting(false);
     }
   }, [isOpen]);
+
+  const handleConfirmVoid = useCallback(async () => {
+    if (!reason.trim()) {
+      setErrorMsg('Please specify or select a cancellation reason');
+      return;
+    }
+
+    if (!pinCode.trim()) {
+      setErrorMsg('Please enter your PIN code to confirm');
+      return;
+    }
+
+    try {
+      setSubmitting(true);
+      setErrorMsg('');
+
+      const res = await voidMutation.mutateAsync({
+        txnId: txn?._id,
+        pinCode: pinCode.trim(),
+        reason: reason.trim()
+      });
+
+      if (res?.success) {
+        setSuccessMsg(res.message || 'Transaction voided successfully');
+        setTimeout(() => {
+          onVoidSuccess?.(res.data);
+          onClose();
+        }, 600);
+      }
+    } catch (err) {
+      console.error('Error voiding transaction:', err);
+      setErrorMsg(err.response?.data?.message || 'Failed to void transaction. Check PIN.');
+    } finally {
+      setSubmitting(false);
+    }
+  }, [reason, pinCode, txn, voidMutation, onVoidSuccess, onClose]);
 
   // Physical keyboard numpad & backspace listener
   useEffect(() => {
@@ -77,7 +114,7 @@ export default function VoidTransactionModal({ isOpen, txn, onClose, onVoidSucce
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, pinCode, reason]);
+  }, [isOpen, pinCode, reason, handleConfirmVoid, onClose]);
 
   if (!isOpen || !txn) return null;
 
@@ -96,42 +133,6 @@ export default function VoidTransactionModal({ isOpen, txn, onClose, onVoidSucce
   const handleClear = () => {
     setPinCode('');
     setErrorMsg('');
-  };
-
-  const handleConfirmVoid = async () => {
-    if (!reason.trim()) {
-      setErrorMsg('Please specify or select a cancellation reason');
-      return;
-    }
-
-    if (!pinCode.trim()) {
-      setErrorMsg('Please enter your PIN code to confirm');
-      return;
-    }
-
-    try {
-      setSubmitting(true);
-      setErrorMsg('');
-
-      const res = await voidMutation.mutateAsync({
-        txnId: txn._id,
-        pinCode: pinCode.trim(),
-        reason: reason.trim()
-      });
-
-      if (res?.success) {
-        setSuccessMsg(res.message || 'Transaction voided successfully');
-        setTimeout(() => {
-          onVoidSuccess?.(res.data);
-          onClose();
-        }, 600);
-      }
-    } catch (err) {
-      console.error('Error voiding transaction:', err);
-      setErrorMsg(err.response?.data?.message || 'Failed to void transaction. Check PIN.');
-    } finally {
-      setSubmitting(false);
-    }
   };
 
   return (
@@ -160,8 +161,12 @@ export default function VoidTransactionModal({ isOpen, txn, onClose, onVoidSucce
           </div>
 
           <button
-            onClick={onClose}
-            className="p-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition"
+            type="button"
+            disabled={submitting}
+            onClick={() => !submitting && onClose()}
+            className={`p-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition ${
+              submitting ? 'opacity-30 cursor-not-allowed pointer-events-none' : 'cursor-pointer'
+            }`}
             title="Close"
           >
             <X className="w-5 h-5" />
@@ -320,8 +325,17 @@ export default function VoidTransactionModal({ isOpen, txn, onClose, onVoidSucce
             disabled={submitting || !reason.trim() || !pinCode}
             className="px-5 py-2.5 bg-red-600 hover:bg-red-500 active:scale-95 text-white rounded-xl text-xs font-black transition shadow-lg shadow-red-600/30 disabled:opacity-40 disabled:pointer-events-none cursor-pointer flex items-center space-x-2"
           >
-            <Ban className="w-4 h-4" />
-            <span>{submitting ? 'Voiding...' : 'Confirm & Void Transaction'}</span>
+            {submitting ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin shrink-0" />
+                <span>Voiding Transaction...</span>
+              </>
+            ) : (
+              <>
+                <Ban className="w-4 h-4 shrink-0" />
+                <span>Confirm & Void Transaction</span>
+              </>
+            )}
           </button>
         </div>
       </div>

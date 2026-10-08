@@ -22,7 +22,8 @@ import {
   AlertTriangle,
   Users,
   ChevronRight,
-  Printer
+  Printer,
+  Loader2
 } from 'lucide-react';
 import CustomerSearchSelect from './CustomerSearchSelect';
 import StaffSearchSelect from './StaffSearchSelect';
@@ -166,6 +167,7 @@ export default function ActiveTicket({
   
   // Checkout States
   const [checkoutLoading, setCheckoutLoading] = useState(false);
+  const [checkoutActionType, setCheckoutActionType] = useState(null); // 'CASH' | 'CARD' | 'TAB'
   const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
   const [checkoutNotes, setCheckoutNotes] = useState('');
   const [successReceipt, setSuccessReceipt] = useState(null);
@@ -267,6 +269,8 @@ export default function ActiveTicket({
       }
     }
 
+    const actionType = (status === 'UNPAID_TAB' || paymentMethod === 'TAB_DEFERRED') ? 'TAB' : paymentMethod;
+    setCheckoutActionType(actionType);
     setErrorMessage('');
     setCheckoutLoading(true);
 
@@ -311,6 +315,7 @@ export default function ActiveTicket({
       });
     } finally {
       setCheckoutLoading(false);
+      setCheckoutActionType(null);
     }
   };
 
@@ -920,8 +925,57 @@ export default function ActiveTicket({
 
       {/* Modal 2: Checkout Confirmation Modal with Payment Actions (Cash, Card, Hold Bill) */}
       {isConfirmModalOpen && (
-        <div className="fixed inset-0 z-[100] bg-black/85 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-150">
-          <div className="bg-slate-900 border border-slate-700 rounded-3xl max-w-lg w-full p-5 sm:p-6 space-y-4 shadow-2xl animate-in zoom-in-95 max-h-[92vh] overflow-y-auto">
+        <div 
+          className="fixed inset-0 z-[100] bg-black/85 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-150"
+          onClick={(e) => {
+            if (e.target === e.currentTarget && !checkoutLoading) {
+              setIsConfirmModalOpen(false);
+            }
+          }}
+        >
+          <div className="bg-slate-900 border border-slate-700 rounded-3xl max-w-lg w-full p-5 sm:p-6 space-y-4 shadow-2xl animate-in zoom-in-95 max-h-[92vh] overflow-y-auto relative">
+            {/* Transaction Processing Loader Overlay */}
+            {checkoutLoading && (
+              <div className="absolute inset-0 z-50 bg-slate-950/92 backdrop-blur-md rounded-3xl flex flex-col items-center justify-center p-6 text-center animate-in fade-in duration-200">
+                <div className="relative mb-4 flex items-center justify-center">
+                  <div className="w-16 h-16 rounded-full border-4 border-amber-500/20 border-t-amber-400 animate-spin flex items-center justify-center">
+                    <Loader2 className="w-8 h-8 text-amber-400 animate-spin" />
+                  </div>
+                  <div className="absolute inset-0 rounded-full bg-amber-500/10 blur-xl animate-pulse pointer-events-none"></div>
+                </div>
+                
+                <div className="space-y-1.5">
+                  <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-black uppercase tracking-wider bg-amber-500/15 text-amber-400 border border-amber-500/30">
+                    <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping"></span>
+                    Processing in Progress
+                  </div>
+                  <h3 className="text-xl font-black text-white tracking-tight">
+                    Transaction is Processing...
+                  </h3>
+                  <p className="text-xs text-slate-300 max-w-xs mx-auto leading-relaxed">
+                    {checkoutActionType === 'CASH'
+                      ? 'Recording cash payment, generating ticket receipt & updating sales ledger...'
+                      : checkoutActionType === 'CARD'
+                      ? 'Recording card transaction, updating sales ledger & generating ticket...'
+                      : 'Saving ticket to customer/room/staff tab and updating open balances...'}
+                  </p>
+                </div>
+
+                {/* Amount Summary Pill */}
+                <div className="mt-4 px-4 py-2 bg-slate-900 border border-slate-800 rounded-2xl flex items-center space-x-2 text-xs font-mono">
+                  <span className="text-slate-400">Total Amount:</span>
+                  <span className="text-amber-400 font-black text-sm">
+                    {formatCurrency(totals.grandTotalInCents, currency)}
+                  </span>
+                </div>
+
+                <div className="mt-3.5 flex items-center space-x-2 text-[11px] text-slate-400">
+                  <Clock className="w-3.5 h-3.5 text-slate-400 animate-pulse" />
+                  <span>Please wait, do not close or reload this window</span>
+                </div>
+              </div>
+            )}
+
             {/* Modal Header */}
             <div className="flex items-center justify-between pb-3 border-b border-slate-800">
               <div className="flex items-center space-x-2.5">
@@ -935,8 +989,12 @@ export default function ActiveTicket({
               </div>
               <button
                 type="button"
-                onClick={() => setIsConfirmModalOpen(false)}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 cursor-pointer"
+                disabled={checkoutLoading}
+                onClick={() => !checkoutLoading && setIsConfirmModalOpen(false)}
+                className={`p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition ${
+                  checkoutLoading ? 'opacity-30 cursor-not-allowed pointer-events-none' : 'cursor-pointer'
+                }`}
+                aria-label="Close dialog"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -1005,10 +1063,11 @@ export default function ActiveTicket({
               </label>
               <textarea
                 value={checkoutNotes}
+                disabled={checkoutLoading}
                 onChange={(e) => setCheckoutNotes(e.target.value)}
                 rows={2}
                 placeholder="e.g. Table 4, takeaway, extra hot, customer request note..."
-                className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-white text-xs sm:text-sm placeholder-slate-500 focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-white text-xs sm:text-sm placeholder-slate-500 focus:ring-2 focus:ring-amber-500 focus:outline-none disabled:opacity-50"
               />
             </div>
 
@@ -1023,26 +1082,37 @@ export default function ActiveTicket({
                 type="button"
                 disabled={checkoutLoading}
                 onClick={() => executeCheckout('UNPAID_TAB', 'TAB_DEFERRED')}
-                className={`w-full py-3 px-4 rounded-xl font-bold text-xs sm:text-sm flex items-center justify-center space-x-2 transition shadow-lg cursor-pointer ${
-                  (tabType === 'CUSTOMER' && customer) || (tabType === 'STAFF' && staffMember) || (tabType === 'ROOM' && selectedRoomNumber)
-                    ? 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white shadow-blue-500/20 active:scale-[0.99]'
-                    : 'bg-slate-800 text-slate-300 hover:bg-slate-750 border border-slate-700'
+                className={`w-full py-3 px-4 rounded-xl font-bold text-xs sm:text-sm flex items-center justify-center space-x-2 transition shadow-lg ${
+                  checkoutLoading
+                    ? 'opacity-60 cursor-not-allowed bg-slate-800 text-slate-400'
+                    : (tabType === 'CUSTOMER' && customer) || (tabType === 'STAFF' && staffMember) || (tabType === 'ROOM' && selectedRoomNumber)
+                    ? 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white shadow-blue-500/20 active:scale-[0.99] cursor-pointer'
+                    : 'bg-slate-800 text-slate-300 hover:bg-slate-750 border border-slate-700 cursor-pointer'
                 }`}
               >
-                <Clock className="w-4 h-4" />
-                <span className="truncate">
-                  {tabType === 'CUSTOMER'
-                    ? (customer?.name
-                        ? `HOLD AS CUSTOMER BILL (${customer.name})`
-                        : 'HOLD AS CUSTOMER BILL')
-                    : tabType === 'ROOM'
-                    ? (selectedRoomNumber 
-                        ? `HOLD AS ROOM BILL (${selectedRoomNumber}${guestName ? ` - ${guestName}` : ''})`
-                        : 'HOLD AS ROOM BILL')
-                    : (staffMember
-                        ? `HOLD AS STAFF TAB (${staffMember.fullName})`
-                        : 'HOLD AS STAFF TAB')}
-                </span>
+                {checkoutLoading && checkoutActionType === 'TAB' ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin shrink-0" />
+                    <span>Holding Tab to Ledger...</span>
+                  </>
+                ) : (
+                  <>
+                    <Clock className="w-4 h-4 shrink-0" />
+                    <span className="truncate">
+                      {tabType === 'CUSTOMER'
+                        ? (customer?.name
+                            ? `HOLD AS CUSTOMER BILL (${customer.name})`
+                            : 'HOLD AS CUSTOMER BILL')
+                        : tabType === 'ROOM'
+                        ? (selectedRoomNumber 
+                            ? `HOLD AS ROOM BILL (${selectedRoomNumber}${guestName ? ` - ${guestName}` : ''})`
+                            : 'HOLD AS ROOM BILL')
+                        : (staffMember
+                            ? `HOLD AS STAFF TAB (${staffMember.fullName})`
+                            : 'HOLD AS STAFF TAB')}
+                    </span>
+                  </>
+                )}
               </button>
 
               <div className="grid grid-cols-2 gap-2">
@@ -1051,10 +1121,21 @@ export default function ActiveTicket({
                   type="button"
                   disabled={checkoutLoading}
                   onClick={() => executeCheckout('PAID', 'CASH')}
-                  className="py-3 px-4 rounded-xl font-black text-xs sm:text-sm bg-emerald-600 hover:bg-emerald-500 active:scale-[0.99] text-white flex items-center justify-center space-x-1.5 shadow-lg shadow-emerald-600/20 disabled:opacity-50 transition cursor-pointer"
+                  className={`py-3 px-4 rounded-xl font-black text-xs sm:text-sm bg-emerald-600 hover:bg-emerald-500 active:scale-[0.99] text-white flex items-center justify-center space-x-1.5 shadow-lg shadow-emerald-600/20 disabled:opacity-50 transition ${
+                    checkoutLoading ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'
+                  }`}
                 >
-                  <DollarSign className="w-4 h-4" />
-                  <span>PAY CASH</span>
+                  {checkoutLoading && checkoutActionType === 'CASH' ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin shrink-0" />
+                      <span>Processing Cash...</span>
+                    </>
+                  ) : (
+                    <>
+                      <DollarSign className="w-4 h-4 shrink-0" />
+                      <span>PAY CASH</span>
+                    </>
+                  )}
                 </button>
 
                 {/* Card Payment */}
@@ -1062,10 +1143,21 @@ export default function ActiveTicket({
                   type="button"
                   disabled={checkoutLoading}
                   onClick={() => executeCheckout('PAID', 'CARD')}
-                  className="py-3 px-4 rounded-xl font-black text-xs sm:text-sm bg-amber-500 hover:bg-amber-400 active:scale-[0.99] text-black flex items-center justify-center space-x-1.5 shadow-lg shadow-amber-500/20 disabled:opacity-50 transition cursor-pointer"
+                  className={`py-3 px-4 rounded-xl font-black text-xs sm:text-sm bg-amber-500 hover:bg-amber-400 active:scale-[0.99] text-black flex items-center justify-center space-x-1.5 shadow-lg shadow-amber-500/20 disabled:opacity-50 transition ${
+                    checkoutLoading ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'
+                  }`}
                 >
-                  <CreditCard className="w-4 h-4" />
-                  <span>PAY CARD</span>
+                  {checkoutLoading && checkoutActionType === 'CARD' ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin shrink-0" />
+                      <span>Processing Card...</span>
+                    </>
+                  ) : (
+                    <>
+                      <CreditCard className="w-4 h-4 shrink-0" />
+                      <span>PAY CARD</span>
+                    </>
+                  )}
                 </button>
               </div>
 
@@ -1073,8 +1165,10 @@ export default function ActiveTicket({
               <button
                 type="button"
                 disabled={checkoutLoading}
-                onClick={() => setIsConfirmModalOpen(false)}
-                className="w-full py-2.5 rounded-xl border border-slate-700 bg-slate-800 hover:bg-slate-750 text-slate-400 hover:text-white font-semibold text-xs transition cursor-pointer"
+                onClick={() => !checkoutLoading && setIsConfirmModalOpen(false)}
+                className={`w-full py-2.5 rounded-xl border border-slate-700 bg-slate-800 hover:bg-slate-750 text-slate-400 hover:text-white font-semibold text-xs transition ${
+                  checkoutLoading ? 'opacity-30 cursor-not-allowed pointer-events-none' : 'cursor-pointer'
+                }`}
               >
                 Cancel / Back to Ticket
               </button>
