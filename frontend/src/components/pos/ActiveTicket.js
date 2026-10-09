@@ -86,14 +86,14 @@ function QuantityControl({ quantity, onUpdateDelta, onSetQuantity }) {
   };
 
   return (
-    <div className="flex items-center space-x-1 bg-slate-800 rounded-lg p-0.5 border border-slate-700/80">
+    <div className="flex items-center bg-slate-800/90 rounded-md p-0.5 border border-slate-700/80 shrink-0">
       <button
         type="button"
         onClick={() => onUpdateDelta(-1)}
-        className="w-7 h-7 flex items-center justify-center rounded-md bg-slate-700/80 hover:bg-slate-600 text-slate-200 active:scale-95 cursor-pointer shrink-0 transition-colors"
+        className="w-6 h-6 flex items-center justify-center rounded bg-slate-700/80 hover:bg-slate-600 text-slate-200 active:scale-95 cursor-pointer shrink-0 transition-colors"
         title="Decrease quantity"
       >
-        <Minus className="w-3.5 h-3.5" />
+        <Minus className="w-3 h-3" />
       </button>
 
       <input
@@ -110,16 +110,16 @@ function QuantityControl({ quantity, onUpdateDelta, onSetQuantity }) {
         onKeyDown={handleKeyDown}
         title="Click to enter quantity manually"
         aria-label="Item quantity"
-        className="w-10 sm:w-11 h-7 text-center font-bold text-sm text-white bg-slate-900/60 focus:bg-slate-900 border border-slate-700/60 focus:border-amber-500 rounded focus:outline-none transition-colors px-0.5 cursor-text select-all"
+        className="w-8 h-6 text-center font-bold text-xs text-white bg-slate-900/60 focus:bg-slate-900 border border-slate-700/60 focus:border-amber-500 rounded focus:outline-none transition-colors px-0 cursor-text select-all"
       />
 
       <button
         type="button"
         onClick={() => onUpdateDelta(1)}
-        className="w-7 h-7 flex items-center justify-center rounded-md bg-slate-700/80 hover:bg-slate-600 text-slate-200 active:scale-95 cursor-pointer shrink-0 transition-colors"
+        className="w-6 h-6 flex items-center justify-center rounded bg-slate-700/80 hover:bg-slate-600 text-slate-200 active:scale-95 cursor-pointer shrink-0 transition-colors"
         title="Increase quantity"
       >
-        <Plus className="w-3.5 h-3.5" />
+        <Plus className="w-3 h-3" />
       </button>
     </div>
   );
@@ -322,9 +322,9 @@ export default function ActiveTicket({
   return (
     <div className="flex flex-col h-full bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
       {/* Top Header: Tab Assignment Switcher (Customer Bill vs. Room Bill vs. Staff Tab) */}
-      <div className="p-2.5 sm:p-3 bg-slate-850 border-b border-slate-800 relative z-30 space-y-2">
+      <div className="p-2 sm:p-2.5 bg-slate-850 border-b border-slate-800 relative z-30 space-y-1.5">
         <div className="flex items-center justify-between">
-          <span className="text-[11px] sm:text-xs font-bold uppercase tracking-wider text-slate-400">
+          <span className="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-slate-400">
             Tab / Bill Assignment
           </span>
 
@@ -333,33 +333,33 @@ export default function ActiveTicket({
             <button
               type="button"
               onClick={() => setTabType('CUSTOMER')}
-              className={`px-2 py-0.5 sm:px-3 sm:py-1 rounded-md text-[11px] sm:text-xs font-bold transition flex items-center space-x-1 sm:space-x-1.5 cursor-pointer ${
+              className={`px-2 py-0.5 rounded text-[11px] font-bold transition flex items-center space-x-1 cursor-pointer ${
                 tabType === 'CUSTOMER'
                   ? 'bg-amber-500 text-black shadow-sm'
                   : 'text-slate-400 hover:text-white'
               }`}
             >
-              <UserCheck className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
+              <UserCheck className="w-3 h-3" />
               <span>Customer</span>
             </button>
 
             <button
               type="button"
               onClick={() => setTabType('ROOM')}
-              className={`px-3 py-1 rounded-md text-xs font-bold transition flex items-center space-x-1.5 cursor-pointer ${
+              className={`px-2 py-0.5 rounded text-[11px] font-bold transition flex items-center space-x-1 cursor-pointer ${
                 tabType === 'ROOM'
                   ? 'bg-amber-500 text-black shadow-sm'
                   : 'text-slate-400 hover:text-white'
               }`}
             >
-              <BedDouble className="w-3.5 h-3.5" />
+              <BedDouble className="w-3 h-3" />
               <span>Room Bill</span>
             </button>
 
             <button
               type="button"
               onClick={() => setTabType('STAFF')}
-              className={`px-2 py-1 rounded-md text-xs font-bold transition flex items-center space-x-1 cursor-pointer ${
+              className={`px-2 py-0.5 rounded text-[11px] font-bold transition flex items-center space-x-1 cursor-pointer ${
                 tabType === 'STAFF'
                   ? 'bg-amber-500 text-black shadow-sm'
                   : 'text-slate-400 hover:text-white'
@@ -465,7 +465,7 @@ export default function ActiveTicket({
       </div>
 
       {/* Cart Items List */}
-      <div className="flex-1 min-h-[90px] overflow-y-auto p-2.5 sm:p-3.5 space-y-2 divide-y divide-slate-800/60">
+      <div className="flex-1 min-h-[90px] overflow-y-auto p-1.5 sm:p-2 divide-y divide-slate-800/60">
         {items.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center text-slate-500 text-sm space-y-2 py-10">
             <Tag className="w-8 h-8 text-slate-600" />
@@ -485,101 +485,80 @@ export default function ActiveTicket({
               : '';
 
             return (
-              <div key={item.productId} className="pt-2 first:pt-0">
-                <div className="flex items-start justify-between gap-1.5">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center flex-wrap gap-1.5">
-                      <span className="text-sm font-semibold text-white leading-snug">
-                        {item.productNameSnapshot}
-                      </span>
-                      {/* Prominent discount badge in row 1 for instant visibility */}
-                      {hasDiscount ? (
-                        <button
-                          type="button"
-                          onClick={() => setLineDiscount(item.productId, 'none', 0)}
-                          className="text-[10px] px-1.5 py-0.5 rounded border border-emerald-700 bg-emerald-950/90 text-emerald-300 font-bold hover:bg-emerald-900 active:scale-95 flex items-center space-x-1 transition cursor-pointer shadow-sm"
-                          title="Discount applied. Click to remove discount"
-                        >
-                          <Tag className="w-2.5 h-2.5 text-emerald-400" />
-                          <span>
-                            {item.lineDiscountType === 'fixed_cents'
-                              ? `-${formatCurrency(item.lineDiscountValue, currency)}`
-                              : `-${item.lineDiscountValue}%`}
-                          </span>
-                          <X className="w-2.5 h-2.5 text-emerald-400 hover:text-red-400" />
-                        </button>
-                      ) : hasProductDiscount ? (
-                        <button
-                          type="button"
-                          onClick={() => setLineDiscount(item.productId, item.productDiscountType, item.productDiscountValue)}
-                          className="text-[10px] px-1.5 py-0.5 rounded border border-dashed border-amber-500/80 bg-amber-500/20 text-amber-300 hover:bg-amber-500/30 active:scale-95 flex items-center space-x-1 transition cursor-pointer font-bold shadow-sm"
-                          title={`Click to apply -${productDiscLabel}`}
-                        >
-                          <Tag className="w-2.5 h-2.5 text-amber-400" />
-                          <span>+ Disc -{productDiscLabel}</span>
-                        </button>
-                      ) : null}
-                    </div>
-                    <div className="text-xs text-slate-400 mt-0.5 flex items-center flex-wrap gap-1.5">
-                      <span>{unitPriceFormatted} ea</span>
-                      {hasDiscount && (
-                        <span className="text-emerald-400 font-medium text-[11px]">
-                          {item.quantity > 1 ? (
-                            item.lineDiscountType === 'fixed_cents'
-                              ? `(-${formatCurrency(item.lineDiscountValue, currency)} ea • -${formatCurrency(item.lineDiscountInCents, currency)} total)`
-                              : `(-${item.lineDiscountValue}% • -${formatCurrency(item.lineDiscountInCents, currency)} total)`
-                          ) : (
-                            `(-${formatCurrency(item.lineDiscountInCents, currency)})`
-                          )}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="text-right shrink-0">
-                    <span className="text-sm font-bold text-white">{lineTotalFormatted}</span>
-                  </div>
-                </div>
-
-                {/* Quantity Controls & Modifiers */}
-                <div className="flex items-center justify-between mt-2">
+              <div key={item.productId} className="py-1 px-1 hover:bg-slate-800/40 rounded transition-colors">
+                {/* Row 1: Micro Stepper, Item Name, Line Total, Trash Button */}
+                <div className="flex items-center gap-1.5">
                   <QuantityControl
                     quantity={item.quantity}
                     onUpdateDelta={(delta) => updateQuantity(item.productId, delta)}
                     onSetQuantity={(newQty) => setQuantity(item.productId, newQty)}
                   />
 
-                  <div className="flex items-center space-x-1.5">
-                    {/* If discount is applied: show applied badge with remove (X) */}
+                  <div className="flex-1 min-w-0 pr-1">
+                    <span className="text-xs sm:text-sm font-semibold text-white truncate block leading-tight" title={item.productNameSnapshot}>
+                      {item.productNameSnapshot}
+                    </span>
+                  </div>
+
+                  <div className="text-right shrink-0 flex items-center space-x-1.5">
+                    <span className="text-xs sm:text-sm font-bold text-white tabular-nums">{lineTotalFormatted}</span>
+                    <button
+                      type="button"
+                      onClick={() => removeItem(item.productId)}
+                      className="text-slate-500 hover:text-red-400 p-1 rounded hover:bg-slate-800/60 transition cursor-pointer"
+                      title="Remove item"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Row 2: Compact Unit Price & Inline Discount Tags */}
+                <div className="flex items-center justify-between mt-0.5 pl-[76px] text-[11px]">
+                  <div className="flex items-center space-x-1 text-slate-400">
+                    <span>{unitPriceFormatted} ea</span>
+                    {hasDiscount && (
+                      <span className="text-emerald-400 font-medium text-[10px]">
+                        {item.quantity > 1 ? (
+                          item.lineDiscountType === 'fixed_cents'
+                            ? `(-${formatCurrency(item.lineDiscountValue, currency)} ea)`
+                            : `(-${item.lineDiscountValue}%)`
+                        ) : null}
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="flex items-center space-x-1">
+                    {/* Applied discount tag (click to remove) */}
                     {hasDiscount ? (
                       <button
                         type="button"
                         onClick={() => setLineDiscount(item.productId, 'none', 0)}
-                        className="text-xs px-2.5 py-1 rounded-md border border-emerald-700 bg-emerald-950/80 text-emerald-400 font-bold hover:bg-emerald-900/90 active:scale-95 flex items-center space-x-1.5 transition cursor-pointer shadow-sm group"
-                        title="Discount applied. Click to remove discount"
+                        className="text-[10px] px-1.5 py-0.5 rounded border border-emerald-700 bg-emerald-950/80 text-emerald-400 font-bold hover:bg-emerald-900/90 active:scale-95 flex items-center space-x-1 transition cursor-pointer shadow-sm group"
+                        title="Discount applied. Click to remove"
                       >
-                        <Tag className="w-3 h-3 text-emerald-400" />
+                        <Tag className="w-2.5 h-2.5 text-emerald-400" />
                         <span>
                           {item.lineDiscountType === 'fixed_cents'
                             ? `-${formatCurrency(item.lineDiscountValue, currency)}`
                             : `-${item.lineDiscountValue}%`}
                         </span>
-                        <X className="w-3 h-3 text-emerald-400/70 group-hover:text-red-400 transition-colors ml-0.5" />
+                        <X className="w-2.5 h-2.5 text-emerald-400/70 group-hover:text-red-400 transition-colors ml-0.5" />
                       </button>
                     ) : hasProductDiscount ? (
-                      /* If product has configured discount: show selectable discount label */
+                      /* Preset product discount quick-apply */
                       <button
                         type="button"
                         onClick={() => setLineDiscount(item.productId, item.productDiscountType, item.productDiscountValue)}
-                        className="text-xs px-2.5 py-1 rounded-md border border-dashed border-amber-500/70 bg-amber-500/10 text-amber-300 hover:bg-amber-500/25 active:scale-95 flex items-center space-x-1 transition cursor-pointer font-semibold shadow-sm"
+                        className="text-[10px] px-1.5 py-0.5 rounded border border-dashed border-amber-500/70 bg-amber-500/10 text-amber-300 hover:bg-amber-500/25 active:scale-95 flex items-center space-x-1 transition cursor-pointer font-semibold shadow-sm"
                         title={`Click to apply -${productDiscLabel}`}
                       >
-                        <Tag className="w-3 h-3 text-amber-400" />
+                        <Tag className="w-2.5 h-2.5 text-amber-400" />
                         <span>+ Disc -{productDiscLabel}</span>
                       </button>
                     ) : null}
 
-                    {/* Custom / Manual line discount button */}
+                    {/* Custom manual line discount button */}
                     <button
                       type="button"
                       onClick={() => {
@@ -596,14 +575,14 @@ export default function ActiveTicket({
                           }
                         }
                       }}
-                      className={`text-xs px-2 py-1 rounded-md border transition cursor-pointer flex items-center space-x-1 ${
+                      className={`text-[10px] px-1.5 py-0.5 rounded border transition cursor-pointer flex items-center space-x-1 ${
                         hasDiscount && !hasProductDiscount
                           ? 'bg-emerald-950/80 border-emerald-700 text-emerald-400 font-bold'
-                          : 'bg-slate-800 border-slate-700 text-slate-300 hover:text-white'
+                          : 'bg-slate-800/80 border-slate-700/80 text-slate-400 hover:text-white'
                       }`}
                       title="Custom discount"
                     >
-                      {!hasDiscount && !hasProductDiscount && <Tag className="w-3 h-3" />}
+                      {!hasDiscount && !hasProductDiscount && <Tag className="w-2.5 h-2.5" />}
                       <span>
                         {hasDiscount && !hasProductDiscount
                           ? (item.lineDiscountType === 'fixed_cents'
@@ -612,22 +591,12 @@ export default function ActiveTicket({
                           : 'Disc'}
                       </span>
                     </button>
-
-                    {/* Delete Item */}
-                    <button
-                      type="button"
-                      onClick={() => removeItem(item.productId)}
-                      className="text-slate-500 hover:text-red-400 p-1 rounded-md transition cursor-pointer"
-                      title="Remove item"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
                   </div>
                 </div>
 
                 {/* Popover Manual Line Discount Editor with Amount / % Toggle */}
                 {selectedLineDiscountId === item.productId && (
-                  <div className="mt-2 p-3 bg-slate-800/95 rounded-xl border border-slate-700 space-y-2 animate-in fade-in duration-100">
+                  <div className="mt-1.5 p-2.5 bg-slate-800/95 rounded-xl border border-slate-700 space-y-2 animate-in fade-in duration-100">
                     {hasProductDiscount && (
                       <button
                         type="button"
@@ -720,38 +689,38 @@ export default function ActiveTicket({
       )}
 
       {/* Financial Totals */}
-      <div className="p-2.5 sm:p-3.5 bg-slate-850 border-t border-slate-800 space-y-1 text-xs sm:text-sm">
+      <div className="p-2 sm:p-2.5 bg-slate-850 border-t border-slate-800 space-y-0.5 text-xs">
         <div className="flex justify-between text-slate-400">
           <span>Subtotal ({totals.itemCount} items)</span>
-          <span>{formatCurrency(totals.rawSubtotalInCents, currency)}</span>
+          <span className="tabular-nums">{formatCurrency(totals.rawSubtotalInCents, currency)}</span>
         </div>
         {totals.totalDiscountInCents > 0 && (
           <div className="flex justify-between text-emerald-400 font-medium">
             <span>Discounts Applied</span>
-            <span>-{formatCurrency(totals.totalDiscountInCents, currency)}</span>
+            <span className="tabular-nums">-{formatCurrency(totals.totalDiscountInCents, currency)}</span>
           </div>
         )}
-        <div className="flex justify-between text-white font-extrabold text-base sm:text-lg pt-1 border-t border-slate-700/60">
+        <div className="flex justify-between text-white font-extrabold text-sm sm:text-base pt-1 border-t border-slate-700/60">
           <span>TOTAL DUE</span>
-          <span className="text-amber-400">{formatCurrency(totals.grandTotalInCents, currency)}</span>
+          <span className="text-amber-400 tabular-nums">{formatCurrency(totals.grandTotalInCents, currency)}</span>
         </div>
       </div>
 
       {/* Streamlined Footer Actions (Flex Row): Left = Discounts Modal, Right = Proceed Button */}
-      <div className="p-2.5 sm:p-3 bg-slate-900 border-t border-slate-800 flex items-center gap-2">
+      <div className="p-2 sm:p-2.5 bg-slate-900 border-t border-slate-800 flex items-center gap-2">
         {/* Left: Discounts Modal Trigger Button */}
         <button
           type="button"
           disabled={items.length === 0}
           onClick={() => setIsDiscountModalOpen(true)}
-          className={`py-3 px-3 sm:px-4 rounded-xl font-bold text-xs sm:text-sm flex items-center justify-center space-x-1.5 transition cursor-pointer shrink-0 border ${
+          className={`py-2.5 px-3 sm:px-3.5 rounded-xl font-bold text-xs sm:text-sm flex items-center justify-center space-x-1.5 transition cursor-pointer shrink-0 border ${
             totals.totalDiscountInCents > 0
               ? 'bg-emerald-950/90 border-emerald-600 text-emerald-300 hover:bg-emerald-900 shadow-sm'
               : 'bg-slate-800 hover:bg-slate-750 border-slate-700 text-slate-300 hover:text-white'
           } disabled:opacity-50 disabled:cursor-not-allowed active:scale-95`}
           title="Manage Ticket Discounts"
         >
-          <Tag className="w-4 h-4 text-amber-400 shrink-0" />
+          <Tag className="w-3.5 h-3.5 text-amber-400 shrink-0" />
           <span>
             {totals.totalDiscountInCents > 0
               ? `Discounts (-${formatCurrency(totals.totalDiscountInCents, currency)})`
@@ -764,7 +733,7 @@ export default function ActiveTicket({
           type="button"
           disabled={checkoutLoading || items.length === 0}
           onClick={handleProceedToConfirmation}
-          className="flex-1 py-3 px-4 rounded-xl font-black text-xs sm:text-sm bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-black flex items-center justify-center space-x-2 shadow-lg shadow-amber-500/20 active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed transition cursor-pointer"
+          className="flex-1 py-2.5 px-4 rounded-xl font-black text-xs sm:text-sm bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-black flex items-center justify-center space-x-2 shadow-lg shadow-amber-500/20 active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed transition cursor-pointer"
         >
           <span>Proceed</span>
           <ChevronRight className="w-4 h-4 stroke-[3]" />
