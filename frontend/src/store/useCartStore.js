@@ -80,6 +80,32 @@ export const useCartStore = create((set, get) => ({
     });
   },
 
+  addCustomItem: ({ name, priceInCents, quantity = 1, lineDiscountType = 'none', lineDiscountValue = 0 }) => {
+    set((state) => {
+      const customId = `custom_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+      const safeQty = Math.max(1, parseInt(quantity, 10) || 1);
+      const safePrice = Math.max(0, Math.round(Number(priceInCents) || 0));
+      const financials = calculateLineFinancials(safePrice, safeQty, lineDiscountType, lineDiscountValue);
+
+      const newItem = {
+        productId: customId,
+        isCustom: true,
+        productNameSnapshot: name.trim() || 'Custom Item',
+        skuSnapshot: 'CUSTOM',
+        categoryNameSnapshot: 'Custom',
+        unitPriceInCents: safePrice,
+        quantity: safeQty,
+        lineDiscountType,
+        lineDiscountValue: Number(lineDiscountValue) || 0,
+        productDiscountType: 'none',
+        productDiscountValue: 0,
+        ...financials
+      };
+
+      return { items: [...state.items, newItem] };
+    });
+  },
+
   updateQuantity: (productId, delta) => {
     set((state) => {
       const updatedItems = state.items

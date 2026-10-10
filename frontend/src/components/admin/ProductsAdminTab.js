@@ -319,7 +319,14 @@ export default function ProductsAdminTab({
               return (
                 <tr key={p._id} className="hover:bg-slate-850/60 transition">
                   <td className="py-3 px-3">
-                    <div className="font-bold text-white">{p.name}</div>
+                    <div className="font-bold text-white flex items-center space-x-1.5">
+                      <span>{p.name}</span>
+                      {p.isCustom && (
+                        <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                          Custom
+                        </span>
+                      )}
+                    </div>
                     <div className="font-mono text-xs text-slate-400">{p.sku}</div>
                   </td>
                   <td className="py-3 px-3">

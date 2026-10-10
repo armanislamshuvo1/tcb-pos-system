@@ -1,5 +1,6 @@
 const Transaction = require('../models/Transaction');
 const Product = require('../models/Product');
+const Category = require('../models/Category');
 const User = require('../models/User');
 const Customer = require('../models/Customer');
 const { getNextTransactionId } = require('../utils/sequenceService');
@@ -143,8 +144,10 @@ exports.createTransaction = async (req, res, next) => {
     }
 
     // Verify Products exist and belong to current company (or system catalog)
-    const productIds = items.map((i) => i.productId).filter(Boolean);
-    const prodFilter = { _id: { $in: productIds } };
+    const rawProductIds = items
+      .map((i) => i.productId)
+      .filter((id) => id && mongoose.Types.ObjectId.isValid(String(id)));
+    const prodFilter = { _id: { $in: rawProductIds } };
     if (req.user && req.user.role !== 'system_admin' && req.user.companyId) {
       prodFilter.companyId = req.user.companyId;
     }
@@ -154,19 +157,79 @@ exports.createTransaction = async (req, res, next) => {
       productMap.set(p._id.toString(), p);
     }
 
-    // Enrich items with verified catalog data and categoryId
-    const validatedItems = items.map((item) => {
-      const dbProd = productMap.get(item.productId?.toString());
-      return {
-        ...item,
-        productId: dbProd ? dbProd._id : item.productId,
-        categoryId: dbProd?.categoryId ? (dbProd.categoryId._id || dbProd.categoryId) : (item.categoryId || undefined),
-        productNameSnapshot: dbProd ? dbProd.name : (item.productNameSnapshot || item.name || 'Product'),
-        skuSnapshot: dbProd ? dbProd.sku : (item.skuSnapshot || item.sku || 'SKU-NONE'),
-        categoryNameSnapshot: dbProd ? (dbProd.categoryNameSnapshot || '') : (item.categoryNameSnapshot || ''),
-        unitPriceInCents: dbProd ? dbProd.priceInCents : (Number(item.unitPriceInCents) || 0)
-      };
-    });
+    // Cache fallback category for one-time custom products if needed
+    let fallbackCategory = null;
+
+    // Enrich items with verified catalog data or automatically create one-time custom product
+    const validatedItems = [];
+    for (const item of items) {
+      const isCustomItem = Boolean(
+        item.isCustom ||
+        !item.productId ||
+        !productMap.has(String(item.productId))
+      );
+
+      if (isCustomItem) {
+        // Resolve or create silent Custom category if needed
+        if (!fallbackCategory) {
+          const catQuery = { slug: 'custom' };
+          if (req.user?.companyId) {
+            catQuery.companyId = req.user.companyId;
+          }
+          fallbackCategory = await Category.findOne(catQuery);
+          if (!fallbackCategory) {
+            const [createdCat] = await Category.create([{
+              name: 'Custom',
+              slug: 'custom',
+              colorCode: '#F59E0B',
+              displayOrder: 99,
+              companyId: req.user?.companyId || null
+            }], { session });
+            fallbackCategory = createdCat;
+          }
+        }
+
+        const customItemPriceInCents = Math.max(0, Math.round(Number(item.unitPriceInCents) || 0));
+        const customItemName = (item.productNameSnapshot || item.name || 'Custom Item').trim();
+        const customSku = `CUST-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
+
+        // Create one-time product with isActive: false (ensures it NEVER appears in catalog grids)
+        const [oneTimeProduct] = await Product.create([{
+          sku: customSku,
+          name: customItemName,
+          categoryId: fallbackCategory._id,
+          categoryNameSnapshot: fallbackCategory.name,
+          priceInCents: customItemPriceInCents,
+          costInCents: 0,
+          stockQuantity: 0,
+          isActive: false, // One-time product
+          isCustom: true,
+          createdBy: req.user.mongoId,
+          companyId: req.user.companyId || null
+        }], { session });
+
+        validatedItems.push({
+          ...item,
+          productId: oneTimeProduct._id,
+          categoryId: fallbackCategory._id,
+          productNameSnapshot: oneTimeProduct.name,
+          skuSnapshot: oneTimeProduct.sku,
+          categoryNameSnapshot: fallbackCategory.name,
+          unitPriceInCents: customItemPriceInCents
+        });
+      } else {
+        const dbProd = productMap.get(String(item.productId));
+        validatedItems.push({
+          ...item,
+          productId: dbProd._id,
+          categoryId: dbProd.categoryId ? (dbProd.categoryId._id || dbProd.categoryId) : (item.categoryId || undefined),
+          productNameSnapshot: dbProd.name,
+          skuSnapshot: dbProd.sku,
+          categoryNameSnapshot: dbProd.categoryNameSnapshot || '',
+          unitPriceInCents: dbProd.priceInCents
+        });
+      }
+    }
 
     // Calculate deterministic integer financials
     const financials = calculateCartFinancials({

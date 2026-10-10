@@ -130,7 +130,8 @@ export default function ActiveTicket({
   onCreateCustomer, 
   staffMembers = [], 
   presetDiscounts = [], 
-  onCheckout 
+  onCheckout,
+  onOpenCustomItemModal
 }) {
   const { 
     items, 
@@ -464,13 +465,41 @@ export default function ActiveTicket({
         )}
       </div>
 
+      {/* Sub-bar: Ticket Item Count + Quick Custom Item Trigger */}
+      <div className="px-2.5 py-1.5 bg-slate-850/90 border-b border-slate-800 flex items-center justify-between">
+        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+          Items ({items.reduce((acc, i) => acc + i.quantity, 0)})
+        </span>
+        {onOpenCustomItemModal && (
+          <button
+            type="button"
+            onClick={onOpenCustomItemModal}
+            className="text-[11px] font-bold text-amber-400 hover:text-amber-300 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 px-2 py-0.5 rounded-lg flex items-center space-x-1 cursor-pointer transition active:scale-95 shadow-sm"
+            title="Add a one-time custom item to this ticket"
+          >
+            <Plus className="w-3 h-3 stroke-[3]" />
+            <span>+ Custom Item</span>
+          </button>
+        )}
+      </div>
+
       {/* Cart Items List */}
       <div className="flex-1 min-h-[90px] overflow-y-auto p-1.5 sm:p-2 divide-y divide-slate-800/60">
         {items.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center text-slate-500 text-sm space-y-2 py-10">
             <Tag className="w-8 h-8 text-slate-600" />
             <span>Active ticket is empty</span>
-            <span className="text-xs text-slate-600">Select items from the catalog to build cart</span>
+            <span className="text-xs text-slate-600">Select items from catalog or add a custom item</span>
+            {onOpenCustomItemModal && (
+              <button
+                type="button"
+                onClick={onOpenCustomItemModal}
+                className="mt-2 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-750 text-amber-400 border border-amber-500/30 text-xs font-bold flex items-center space-x-1.5 cursor-pointer shadow-sm transition active:scale-95"
+              >
+                <Plus className="w-3.5 h-3.5 stroke-[3]" />
+                <span>Add Custom Item</span>
+              </button>
+            )}
           </div>
         ) : (
           items.map((item) => {
@@ -494,10 +523,15 @@ export default function ActiveTicket({
                     onSetQuantity={(newQty) => setQuantity(item.productId, newQty)}
                   />
 
-                  <div className="flex-1 min-w-0 pr-1">
+                  <div className="flex-1 min-w-0 pr-1 flex items-center space-x-1.5">
                     <span className="text-xs sm:text-sm font-semibold text-white truncate block leading-tight" title={item.productNameSnapshot}>
                       {item.productNameSnapshot}
                     </span>
+                    {item.isCustom && (
+                      <span className="text-[9px] font-extrabold px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 shrink-0 uppercase tracking-wider">
+                        Custom
+                      </span>
+                    )}
                   </div>
 
                   <div className="text-right shrink-0 flex items-center space-x-1.5">

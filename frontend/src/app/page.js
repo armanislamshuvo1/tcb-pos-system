@@ -6,8 +6,9 @@ import CategoryTabs from '../components/pos/CategoryTabs';
 import SearchBar from '../components/pos/SearchBar';
 import ProductGrid from '../components/pos/ProductGrid';
 import ActiveTicket from '../components/pos/ActiveTicket';
+import CustomItemModal from '../components/pos/CustomItemModal';
 import Link from 'next/link';
-import { ShoppingCart, ChevronRight, ArrowLeft } from 'lucide-react';
+import { ShoppingCart, ChevronRight, ArrowLeft, Plus } from 'lucide-react';
 import { 
   useCategoriesQuery, 
   useProductsQuery, 
@@ -38,7 +39,14 @@ export default function PosPage() {
 
   const [activeCategoryId, setActiveCategoryId] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
+  const [isCustomModalOpen, setIsCustomModalOpen] = useState(false);
+  const [customModalInitialName, setCustomModalInitialName] = useState('');
   const loading = categoriesLoading || productsLoading;
+
+  const handleOpenCustomModal = (initialName = '') => {
+    setCustomModalInitialName(initialName);
+    setIsCustomModalOpen(true);
+  };
 
   const handleCreateCustomer = async ({ name, phone }) => {
     return await createCustomerMutation.mutateAsync({ name, phone });
@@ -118,8 +126,19 @@ export default function PosPage() {
           mobileActiveView === 'ticket' ? 'hidden md:flex' : 'flex'
         }`}>
           {/* Quick Search Row with left padding so floating menu button sits cleanly */}
-          <div className="pl-13 sm:pl-15">
-            <SearchBar searchTerm={searchTerm} onSearchChange={setSearchTerm} />
+          <div className="pl-13 sm:pl-15 flex items-center gap-2">
+            <div className="flex-1 min-w-0">
+              <SearchBar searchTerm={searchTerm} onSearchChange={setSearchTerm} />
+            </div>
+            <button
+              type="button"
+              onClick={() => handleOpenCustomModal()}
+              className="px-3 py-2.5 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-black font-extrabold text-xs sm:text-sm rounded-xl flex items-center space-x-1.5 shadow-md shadow-amber-500/20 active:scale-95 transition cursor-pointer shrink-0"
+              title="Add a one-time custom item to cart"
+            >
+              <Plus className="w-4 h-4 stroke-[3]" />
+              <span className="hidden sm:inline">Custom Item</span>
+            </button>
           </div>
 
           {/* Dynamic Category Tabs */}
@@ -136,7 +155,12 @@ export default function PosPage() {
                 Loading product catalog...
               </div>
             ) : (
-              <ProductGrid products={filteredProducts} onAddToCart={addItem} />
+              <ProductGrid
+                products={filteredProducts}
+                onAddToCart={addItem}
+                searchTerm={searchTerm}
+                onAddCustomProduct={handleOpenCustomModal}
+              />
             )}
           </div>
 
@@ -198,10 +222,19 @@ export default function PosPage() {
               staffMembers={staffMembers}
               presetDiscounts={presetDiscounts}
               onCheckout={handleCheckout}
+              onOpenCustomItemModal={() => handleOpenCustomModal()}
             />
           </div>
         </div>
       </main>
+
+      {/* Touch-Friendly One-Time Custom Item Modal */}
+      <CustomItemModal
+        isOpen={isCustomModalOpen}
+        onClose={() => setIsCustomModalOpen(false)}
+        initialName={customModalInitialName}
+        currency={currency}
+      />
     </div>
   );
 }

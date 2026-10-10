@@ -237,3 +237,71 @@ exports.deleteProduct = async (req, res, next) => {
     next(error);
   }
 };
+
+// @desc    Create a one-time custom product (hidden from catalog grids)
+// @route   POST /api/products/custom-item
+// @access  Authenticated (Cashier, Admin, Staff)
+exports.createOneTimeCustomProduct = async (req, res, next) => {
+  try {
+    const { name, priceInCents, priceDollars } = req.body;
+
+    if (!name || (priceInCents === undefined && priceDollars === undefined)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Product name and price are required'
+      });
+    }
+
+    const assignedCompanyId = req.user.role === 'system_admin'
+      ? (req.body.companyId || req.user.companyId || null)
+      : req.user.companyId;
+
+    if (req.user.role !== 'system_admin' && !assignedCompanyId) {
+      return res.status(403).json({ success: false, message: 'Unauthorized: No company associated' });
+    }
+
+    const calculatedPriceInCents = priceInCents !== undefined
+      ? Math.max(0, Math.round(Number(priceInCents)))
+      : Math.max(0, Math.round(parseFloat(priceDollars) * 100));
+
+    // Resolve or Auto-create Category "Custom"
+    let targetCategory = await Category.findOne({
+      slug: 'custom',
+      ...(assignedCompanyId ? { companyId: assignedCompanyId } : {})
+    });
+
+    if (!targetCategory) {
+      targetCategory = await Category.create({
+        name: 'Custom',
+        slug: 'custom',
+        colorCode: '#F59E0B',
+        displayOrder: 99,
+        companyId: assignedCompanyId
+      });
+    }
+
+    const sku = `CUST-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
+
+    const product = await Product.create({
+      sku,
+      name: name.trim(),
+      categoryId: targetCategory._id,
+      categoryNameSnapshot: targetCategory.name,
+      priceInCents: calculatedPriceInCents,
+      costInCents: 0,
+      stockQuantity: 0,
+      isActive: false, // One-time product: never shows up in catalog queries
+      isCustom: true,
+      createdBy: req.user.mongoId,
+      companyId: assignedCompanyId
+    });
+
+    res.status(201).json({
+      success: true,
+      data: product
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+

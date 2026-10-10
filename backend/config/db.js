@@ -18,8 +18,12 @@ const connectDB = async () => {
   // Fallback to embedded mongodb-memory-server for local development
   try {
     console.log('[MongoDB] Spinning up embedded MongoDB Memory Server for local development...');
-    const { MongoMemoryServer } = require('mongodb-memory-server');
-    mongodInstance = await MongoMemoryServer.create();
+    const { MongoMemoryReplSet, MongoMemoryServer } = require('mongodb-memory-server');
+    try {
+      mongodInstance = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
+    } catch (replErr) {
+      mongodInstance = await MongoMemoryServer.create();
+    }
     const uri = mongodInstance.getUri();
     
     await mongoose.connect(uri);

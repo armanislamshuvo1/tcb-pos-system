@@ -5,7 +5,7 @@ import { Plus, Package } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { formatCurrency } from '../../utils/currency';
 
-export default function ProductGrid({ products, onAddToCart }) {
+export default function ProductGrid({ products, onAddToCart, searchTerm = '', onAddCustomProduct }) {
   const { currency } = useAuth();
 
   if (!products || products.length === 0) {
@@ -13,7 +13,25 @@ export default function ProductGrid({ products, onAddToCart }) {
       <div className="flex flex-col items-center justify-center h-64 bg-slate-800/40 rounded-2xl border border-slate-700/60 p-6 text-center">
         <Package className="w-12 h-12 text-slate-500 mb-3" />
         <h4 className="text-white font-semibold text-base">No Products Found</h4>
-        <p className="text-slate-400 text-xs mt-1">Try selecting a different category or clearing your search filter.</p>
+        {searchTerm ? (
+          <div className="space-y-3 mt-1">
+            <p className="text-slate-400 text-xs">
+              No matching item found for &ldquo;<span className="text-white font-medium">{searchTerm}</span>&rdquo;.
+            </p>
+            {onAddCustomProduct && (
+              <button
+                type="button"
+                onClick={() => onAddCustomProduct(searchTerm)}
+                className="px-3.5 py-2 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-black font-extrabold text-xs rounded-xl shadow-md transition cursor-pointer inline-flex items-center space-x-1.5 active:scale-95"
+              >
+                <Plus className="w-4 h-4 stroke-[3]" />
+                <span>Add &ldquo;{searchTerm}&rdquo; as Custom Item</span>
+              </button>
+            )}
+          </div>
+        ) : (
+          <p className="text-slate-400 text-xs mt-1">Try selecting a different category or clearing your search filter.</p>
+        )}
       </div>
     );
   }

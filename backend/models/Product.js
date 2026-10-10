@@ -55,6 +55,15 @@ const productSchema = new mongoose.Schema({
     type: Boolean, 
     default: true 
   },
+  isCustom: {
+    type: Boolean,
+    default: false,
+    index: true
+  },
+  createdBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  },
   companyId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Company',
